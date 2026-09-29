@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Users, CreditCard, Receipt, Truck,
-  BarChart3, Settings, FileSpreadsheet, Menu, X
+  BarChart3, Settings, FileSpreadsheet, Menu, X, LogOut
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { supabase } from '../../lib/supabase'
 
 const NAV = [
   { to: '/',             label: 'Tableau de bord', icon: LayoutDashboard },
@@ -62,8 +63,15 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         ))}
       </nav>
 
-      <div className="px-4 py-4">
+      <div className="px-4 py-4 space-y-2">
         <p className="text-xs text-gray-400">Alpha Yaya · Koloma · Conakry</p>
+        <button
+          onClick={() => supabase.auth.signOut()}
+          className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Déconnexion
+        </button>
       </div>
     </div>
   )

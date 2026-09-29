@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './lib/supabase'
 import { Sidebar, MobileHeader } from './components/layout/Sidebar'
+import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { Customers } from './pages/Customers'
 import { CustomerProfile } from './pages/CustomerProfile'
@@ -40,6 +43,29 @@ function AppShell() {
 }
 
 export default function App() {
+  const [session, setSession] = useState<Session | null | undefined>(undefined)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Still loading
+  if (session === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-sage)' }}>
+        <div className="w-8 h-8 border-2 border-gray-300 rounded-full animate-spin" style={{ borderTopColor: 'var(--color-brand)' }} />
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <Login />
+  }
+
   return (
     <BrowserRouter>
       <AppShell />

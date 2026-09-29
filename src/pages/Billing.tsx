@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Plus, ChevronLeft, ChevronRight, Zap, MessageCircle, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Plus, ChevronLeft, ChevronRight, Zap, MessageCircle, Loader2, CheckCircle2, AlertTriangle, Clock, CreditCard } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { LoadingState } from '../components/ui/LoadingState'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Modal } from '../components/ui/Modal'
-import { useBilling } from '../hooks/useBilling'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { PaymentForm } from '../components/PaymentForm'
+import { useBilling, type ChargeRow } from '../hooks/useBilling'
 import { formatMoney, formatBillingPeriod, currentBillingPeriod } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 
@@ -396,6 +398,12 @@ export function Billing() {
   const [showForm, setShowForm] = useState(false)
   const [showGenerate, setShowGenerate] = useState(false)
   const [showWhatsApp, setShowWhatsApp] = useState(false)
+  // Amélioration 3: inline payment
+  const [payCharge, setPayCharge] = useState<ChargeRow | null>(null)
+  // Amélioration 4: mark overdue
+  const [overdueCount, setOverdueCount] = useState(0)
+  const [showOverdueConfirm, setShowOverdueConfirm] = useState(false)
+  const [markingOverdue, setMarkingOverdue] = useState(false)
   const { charges, loading, summary, refresh } = useBilling(period, statusFilter)
 
   function prevMonth() {
@@ -408,6 +416,41 @@ export function Billing() {
     const [y, m] = period.split('-').map(Number)
     const d = new Date(y, m, 1)
     setPeriod(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  async function checkOverdue() {
+    const { data } = await supabase
+      .from('billing_charges')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['unpaid', 'partial'])
+      .lt('billing_period', currentBillingPeriod())
+    setOverdueCount((data as any)?.length ?? 0)
+    // Use count from the response
+    supabase.from('billing_charges')
+      .select('id')
+      .in('status', ['unpaid', 'partial'])
+      .lt('billing_period', currentBillingPeriod())
+      .then(({ data: rows }) => {
+        setOverdueCount(rows?.length ?? 0)
+        setShowOverdueConfirm(true)
+      })
+  }
+
+  async function handleMarkOverdue() {
+    setMarkingOverdue(true)
+    const { data: rows } = await supabase
+      .from('billing_charges')
+      .select('id')
+      .in('status', ['unpaid', 'partial'])
+      .lt('billing_period', currentBillingPeriod())
+    if (rows && rows.length > 0) {
+      await supabase.from('billing_charges')
+        .update({ status: 'overdue' } as any)
+        .in('id', rows.map((r: any) => r.id))
+    }
+    setMarkingOverdue(false)
+    setShowOverdueConfirm(false)
+    refresh()
   }
 
   const unpaidCount = charges.filter(c => ['unpaid', 'partial', 'overdue'].includes(c.status)).length
@@ -431,6 +474,10 @@ export function Billing() {
                   {unpaidCount > 9 ? '9+' : unpaidCount}
                 </span>
               )}
+            </button>
+            <button className="btn-secondary" onClick={checkOverdue} title="Marquer en retard les mois précédents">
+              <Clock className="w-4 h-4 text-orange-500" />
+              Retards
             </button>
             <button className="btn-secondary" onClick={() => setShowGenerate(true)}>
               <Zap className="w-4 h-4 text-amber-500" />
@@ -490,6 +537,7 @@ export function Billing() {
                   <th className="table-header text-right hidden sm:table-cell">Payé</th>
                   <th className="table-header text-right">Solde</th>
                   <th className="table-header">Statut</th>
+                  <th className="table-header"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -518,6 +566,20 @@ export function Billing() {
                       </span>
                     </td>
                     <td className="table-cell"><StatusBadge status={c.status} /></td>
+                    {/* Amélioration 3: inline pay button */}
+                    <td className="table-cell">
+                      {['unpaid', 'partial', 'overdue'].includes(c.status) && (
+                        <button
+                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-colors"
+                          style={{ background: 'var(--color-brand)', color: 'white' }}
+                          onClick={e => { e.stopPropagation(); setPayCharge(c) }}
+                          title="Enregistrer un paiement"
+                        >
+                          <CreditCard className="w-3 h-3" />
+                          Payer
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -542,6 +604,37 @@ export function Billing() {
       <Modal open={showWhatsApp} title="💬 Rappels WhatsApp — impayés" onClose={() => setShowWhatsApp(false)}>
         <WhatsAppModal period={period} onClose={() => setShowWhatsApp(false)} />
       </Modal>
+
+      {/* Amélioration 3: inline payment modal */}
+      <Modal
+        open={!!payCharge}
+        title={`Paiement — ${payCharge?.customers?.last_name ?? ''} ${payCharge?.customers?.first_name ?? ''}`}
+        onClose={() => setPayCharge(null)}
+      >
+        {payCharge && (
+          <PaymentForm
+            customerId={payCharge.customer_id}
+            customerName={`${payCharge.customers?.last_name ?? ''} ${payCharge.customers?.first_name ?? ''}`}
+            outstandingCharges={[payCharge as any]}
+            onSuccess={() => { setPayCharge(null); refresh() }}
+            onCancel={() => setPayCharge(null)}
+          />
+        )}
+      </Modal>
+
+      {/* Amélioration 4: overdue confirmation */}
+      <ConfirmDialog
+        open={showOverdueConfirm}
+        title="Marquer les retards"
+        description={
+          overdueCount === 0
+            ? 'Aucune charge impayée des mois précédents.'
+            : `${overdueCount} charge(s) impayée(s) des mois précédents seront marquées "En retard".`
+        }
+        confirmLabel={markingOverdue ? 'Mise à jour...' : `Marquer ${overdueCount} retard(s)`}
+        onConfirm={overdueCount > 0 ? handleMarkOverdue : () => setShowOverdueConfirm(false)}
+        onCancel={() => setShowOverdueConfirm(false)}
+      />
     </div>
   )
 }

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, MapPin, CreditCard } from 'lucide-react'
+import { ArrowLeft, Phone, MapPin, CreditCard, Pencil } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { LoadingState } from '../components/ui/LoadingState'
 import { Modal } from '../components/ui/Modal'
 import { PaymentForm } from '../components/PaymentForm'
+import { CustomerForm } from '../components/CustomerForm'
 import { useCustomerBilling } from '../hooks/useBilling'
+import { useSectors } from '../hooks/useCustomers'
 import { formatMoney, formatDate, formatBillingPeriod } from '../lib/utils'
 import type { Customer, Sector, Subscription } from '../types/database'
 
@@ -21,8 +23,17 @@ export function CustomerProfile() {
   const [customer, setCustomer] = useState<FullCustomer | null>(null)
   const [loading, setLoading] = useState(true)
   const [showPayment, setShowPayment] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const sectors = useSectors()
 
   const { charges, loading: chargesLoading } = useCustomerBilling(id!)
+
+  function reloadCustomer() {
+    if (!id) return
+    supabase.from('customers').select('*, sectors (*), subscriptions (*)')
+      .eq('id', id).single()
+      .then(({ data }) => setCustomer(data as unknown as FullCustomer))
+  }
 
   useEffect(() => {
     if (!id) return
@@ -93,10 +104,16 @@ export function CustomerProfile() {
               )}
             </div>
           </div>
-          <button className="btn-secondary" onClick={() => setShowPayment(true)}>
-            <CreditCard className="w-4 h-4" />
-            Enregistrer paiement
-          </button>
+          <div className="flex gap-2">
+            <button className="btn-secondary" onClick={() => setShowEdit(true)}>
+              <Pencil className="w-4 h-4" />
+              Modifier
+            </button>
+            <button className="btn-primary" onClick={() => setShowPayment(true)}>
+              <CreditCard className="w-4 h-4" />
+              Paiement
+            </button>
+          </div>
         </div>
       </div>
 
@@ -205,6 +222,28 @@ export function CustomerProfile() {
             window.location.reload()
           }}
           onCancel={() => setShowPayment(false)}
+        />
+      </Modal>
+
+      <Modal open={showEdit} title="Modifier le client" onClose={() => setShowEdit(false)} size="lg">
+        <CustomerForm
+          sectors={sectors}
+          customerId={customer.id}
+          defaultValues={{
+            last_name: customer.last_name,
+            first_name: customer.first_name,
+            phone: customer.phone ?? '',
+            subscriber_id: customer.subscriber_id ?? '',
+            neighborhood: customer.neighborhood ?? '',
+            sector_id: customer.sector_id ?? '',
+            concession: customer.concession ?? '',
+            reference: customer.reference ?? '',
+            address: customer.address ?? '',
+            request_date: customer.request_date ?? '',
+            status: customer.status,
+          }}
+          onSuccess={() => { setShowEdit(false); reloadCustomer() }}
+          onCancel={() => setShowEdit(false)}
         />
       </Modal>
     </div>

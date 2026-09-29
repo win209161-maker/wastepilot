@@ -7,9 +7,11 @@ interface Props {
   onSuccess: () => void
   onCancel: () => void
   defaultValues?: Record<string, string>
+  customerId?: string
 }
 
-export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {} }: Props) {
+export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {}, customerId }: Props) {
+  const editMode = !!customerId
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -24,7 +26,7 @@ export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {} 
     address: defaultValues.address ?? '',
     request_date: defaultValues.request_date ?? '',
     monthly_price: defaultValues.monthly_price ?? '20000',
-    status: 'active' as const,
+    status: (defaultValues.status ?? 'active') as 'active' | 'suspended' | 'paused' | 'cancelled',
   })
 
   const set = (field: string, value: string) => setForm(f => ({ ...f, [field]: value }))
@@ -39,41 +41,44 @@ export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {} 
     setError(null)
 
     try {
-      const { data: customer, error: custErr } = await supabase
-        .from('customers')
-        .insert({
-          last_name: form.last_name.trim().toUpperCase(),
-          first_name: form.first_name.trim(),
-          phone: form.phone || null,
-          subscriber_id: form.subscriber_id || null,
-          neighborhood: form.neighborhood || null,
-          sector_id: form.sector_id || null,
-          concession: form.concession || null,
-          reference: form.reference || null,
-          address: form.address || null,
-          request_date: form.request_date || null,
-          status: form.status,
-        })
-        .select()
-        .single()
+      const payload = {
+        last_name: form.last_name.trim().toUpperCase(),
+        first_name: form.first_name.trim(),
+        phone: form.phone || null,
+        subscriber_id: form.subscriber_id || null,
+        neighborhood: form.neighborhood || null,
+        sector_id: form.sector_id || null,
+        concession: form.concession || null,
+        reference: form.reference || null,
+        address: form.address || null,
+        request_date: form.request_date || null,
+        status: form.status,
+      }
 
-      if (custErr) throw custErr
+      if (editMode) {
+        const { error: err } = await supabase.from('customers').update(payload).eq('id', customerId)
+        if (err) throw err
+      } else {
+        const { data: customer, error: custErr } = await supabase
+          .from('customers').insert(payload).select().single()
+        if (custErr) throw custErr
 
-      const price = parseInt(form.monthly_price)
-      if (!isNaN(price) && price > 0) {
-        const { error: subErr } = await supabase.from('subscriptions').insert({
-          customer_id: customer.id,
-          monthly_price: price,
-          start_date: form.request_date || new Date().toISOString().split('T')[0],
-          status: 'active',
-          service_frequency: 'monthly',
-        })
-        if (subErr) throw subErr
+        const price = parseInt(form.monthly_price)
+        if (!isNaN(price) && price > 0) {
+          const { error: subErr } = await supabase.from('subscriptions').insert({
+            customer_id: customer.id,
+            monthly_price: price,
+            start_date: form.request_date || new Date().toISOString().split('T')[0],
+            status: 'active',
+            service_frequency: 'monthly',
+          })
+          if (subErr) throw subErr
+        }
       }
 
       onSuccess()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur lors de la création')
+      setError(e instanceof Error ? e.message : 'Erreur lors de l\'enregistrement')
     } finally {
       setSaving(false)
     }
@@ -137,18 +142,30 @@ export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {} 
           <label className="label">Date de demande</label>
           <input className="input" type="date" value={form.request_date} onChange={e => set('request_date', e.target.value)} />
         </div>
-        <div>
-          <label className="label">Prix mensuel (FG) *</label>
-          <input
-            className="input"
-            type="number"
-            min="1"
-            step="1000"
-            value={form.monthly_price}
-            onChange={e => set('monthly_price', e.target.value)}
-            required
-          />
-        </div>
+        {editMode ? (
+          <div>
+            <label className="label">Statut</label>
+            <select className="select" value={form.status} onChange={e => set('status', e.target.value)}>
+              <option value="active">Actif</option>
+              <option value="suspended">Suspendu</option>
+              <option value="paused">Pausé</option>
+              <option value="cancelled">Résilié</option>
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="label">Prix mensuel (FG) *</label>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              step="1000"
+              value={form.monthly_price}
+              onChange={e => set('monthly_price', e.target.value)}
+              required
+            />
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 pt-2">
@@ -156,7 +173,7 @@ export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {} 
           Annuler
         </button>
         <button type="submit" className="btn-primary flex-1" disabled={saving}>
-          {saving ? 'Enregistrement...' : 'Créer le client'}
+          {saving ? 'Enregistrement...' : editMode ? 'Sauvegarder' : 'Créer le client'}
         </button>
       </div>
     </form>

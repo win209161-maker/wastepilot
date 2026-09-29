@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Users, CreditCard, Receipt, Truck,
-  BarChart3, Settings, Trash2, Menu, X
+  BarChart3, Settings, FileSpreadsheet, Menu, X
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -12,7 +12,7 @@ const NAV = [
   { to: '/payments',    label: 'Paiements',         icon: CreditCard },
   { to: '/collections', label: 'Collectes',         icon: Truck },
   { to: '/reports',     label: 'Rapports',          icon: BarChart3 },
-  { to: '/import',      label: 'Import Excel',      icon: Trash2 },
+  { to: '/import',      label: 'Import Excel',      icon: FileSpreadsheet },
   { to: '/settings',    label: 'Paramètres',        icon: Settings },
 ]
 
@@ -21,24 +21,31 @@ interface SidebarProps {
   onClose: () => void
 }
 
+const Logo = () => (
+  <div className="flex items-center gap-2.5">
+    <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--color-brand)' }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="3 6 5 6 21 6" />
+        <path d="M19 6l-1 14H6L5 6" />
+        <path d="M10 11v6M14 11v6" />
+        <path d="M9 6V4h6v2" />
+      </svg>
+    </div>
+    <div>
+      <div className="text-sm font-bold text-gray-900 font-serif">WastePilot</div>
+      <div className="text-xs text-gray-400">Gestion collecte</div>
+    </div>
+  </div>
+)
+
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const content = (
     <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className="px-4 py-5 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
-            <Trash2 className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-gray-900">WastePilot</div>
-            <div className="text-xs text-gray-500">Gestion collecte</div>
-          </div>
-        </div>
+      <div className="px-4 py-5">
+        <Logo />
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+      <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-0.5">
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -46,12 +53,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
             end={to === '/'}
             onClick={onClose}
             className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-green-50 text-green-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              )
+              cn('sidebar-nav-item', isActive && 'active')
             }
           >
             <Icon className="w-4 h-4 shrink-0" />
@@ -60,9 +62,8 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-4 py-4 border-t border-gray-200">
-        <p className="text-xs text-gray-400">Alpha Yaya · Koloma</p>
+      <div className="px-4 py-4">
+        <p className="text-xs text-gray-400">Alpha Yaya · Koloma · Conakry</p>
       </div>
     </div>
   )
@@ -70,7 +71,10 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex lg:flex-col w-60 shrink-0 border-r border-gray-200 bg-white h-screen sticky top-0">
+      <aside
+        className="hidden lg:flex lg:flex-col w-60 shrink-0 h-screen sticky top-0"
+        style={{ background: 'var(--color-sage)', borderRight: '1px solid rgba(0,0,0,0.06)' }}
+      >
         {content}
       </aside>
 
@@ -78,10 +82,10 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-          <aside className="absolute left-0 top-0 bottom-0 w-60 bg-white shadow-xl z-10">
+          <aside className="absolute left-0 top-0 bottom-0 w-60 shadow-xl z-10" style={{ background: 'var(--color-sage)' }}>
             <button
               onClick={onClose}
-              className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-100"
+              className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-white/60"
             >
               <X className="w-4 h-4 text-gray-500" />
             </button>
@@ -95,14 +99,12 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
 
 export function MobileHeader({ onMenuClick }: { onMenuClick: () => void }) {
   return (
-    <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white sticky top-0 z-30">
-      <div className="flex items-center gap-2">
-        <div className="w-7 h-7 bg-green-600 rounded-lg flex items-center justify-center">
-          <Trash2 className="w-3.5 h-3.5 text-white" />
-        </div>
-        <span className="text-sm font-bold text-gray-900">WastePilot</span>
-      </div>
-      <button onClick={onMenuClick} className="p-1.5 rounded-lg hover:bg-gray-100">
+    <div
+      className="lg:hidden flex items-center justify-between px-4 py-3 sticky top-0 z-30"
+      style={{ background: 'var(--color-sage)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+    >
+      <Logo />
+      <button onClick={onMenuClick} className="p-1.5 rounded-lg hover:bg-white/60">
         <Menu className="w-5 h-5 text-gray-600" />
       </button>
     </div>

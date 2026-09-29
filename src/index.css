@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,82 +8,134 @@
     margin: 0;
     padding: 0;
   }
+  html {
+    --color-sage: #E9EFED;
+    --color-brand: #1B6C42;
+    --color-brand-hover: #155A35;
+  }
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    background-color: var(--color-sage);
+    color: #111827;
     font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1, h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+  code, kbd, pre, .font-mono {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
   }
 }
 
 @layer components {
+  /* Cards with spotlight hover */
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+    @apply bg-white rounded-2xl border border-white/60 shadow-sm;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
   }
+  .card:hover {
+    box-shadow: 0 8px 30px rgba(27, 108, 66, 0.10), 0 2px 8px rgba(0,0,0,0.06);
+    transform: translateY(-1px);
+  }
+
+  /* Buttons — pill style */
   .btn-primary {
-    @apply inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center gap-2 px-5 py-2 text-white text-sm font-semibold rounded-full transition-all;
+    background-color: var(--color-brand);
   }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-brand-hover);
+    box-shadow: 0 4px 14px rgba(27, 108, 66, 0.35);
+    transform: translateY(-1px);
+  }
+  .btn-primary:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
   .btn-secondary {
-    @apply inline-flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg text-sm font-medium border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center gap-2 px-5 py-2 bg-white text-gray-700 text-sm font-semibold rounded-full border border-gray-200 transition-all hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed;
   }
+
   .btn-danger {
-    @apply inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors;
+    @apply inline-flex items-center gap-2 px-5 py-2 bg-red-600 text-white text-sm font-semibold rounded-full transition-all hover:bg-red-700;
   }
+
+  /* Form controls */
   .input {
-    @apply w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-gray-400 bg-white;
+    @apply w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white placeholder-gray-400 transition-all;
+    outline: none;
   }
+  .input:focus {
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 3px rgba(27, 108, 66, 0.12);
+  }
+
   .select {
-    @apply w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white;
+    @apply w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white transition-all;
+    outline: none;
   }
+  .select:focus {
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 3px rgba(27, 108, 66, 0.12);
+  }
+
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1;
   }
+
+  /* Badges */
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
   }
-  .badge-green {
-    @apply badge bg-green-100 text-green-800;
-  }
-  .badge-red {
-    @apply badge bg-red-100 text-red-800;
-  }
-  .badge-yellow {
-    @apply badge bg-yellow-100 text-yellow-800;
-  }
-  .badge-gray {
-    @apply badge bg-gray-100 text-gray-600;
-  }
-  .badge-blue {
-    @apply badge bg-blue-100 text-blue-800;
-  }
-  .badge-orange {
-    @apply badge bg-orange-100 text-orange-800;
-  }
-  .badge-purple {
-    @apply badge bg-purple-100 text-purple-800;
-  }
+  .badge-green   { @apply badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200; }
+  .badge-red     { @apply badge bg-red-50 text-red-700 ring-1 ring-red-200; }
+  .badge-yellow  { @apply badge bg-amber-50 text-amber-700 ring-1 ring-amber-200; }
+  .badge-gray    { @apply badge bg-gray-100 text-gray-600; }
+  .badge-blue    { @apply badge bg-blue-50 text-blue-700 ring-1 ring-blue-200; }
+  .badge-orange  { @apply badge bg-orange-50 text-orange-700 ring-1 ring-orange-200; }
+  .badge-purple  { @apply badge bg-purple-50 text-purple-700 ring-1 ring-purple-200; }
+
+  /* Tables */
   .table-cell {
     @apply px-4 py-3 text-sm text-gray-700;
   }
   .table-header {
-    @apply px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left bg-gray-50;
+    @apply px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-left;
+    background-color: var(--color-sage);
   }
+
+  /* Typography */
   .page-title {
-    @apply text-xl font-semibold text-gray-900;
+    font-family: 'Playfair Display', Georgia, serif;
+    @apply text-2xl font-semibold text-gray-900;
   }
   .section-title {
-    @apply text-sm font-semibold text-gray-500 uppercase tracking-wider;
+    @apply text-xs font-semibold text-gray-400 uppercase tracking-wider;
+  }
+
+  /* Sidebar */
+  .sidebar-nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 transition-all hover:bg-white/70;
+  }
+  .sidebar-nav-item.active {
+    @apply bg-white text-gray-900;
+    color: var(--color-brand);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .sidebar-nav-item.active svg {
+    color: var(--color-brand);
   }
 }
 
 @layer utilities {
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: #d1d5db transparent;
+  }
+  .font-serif {
+    font-family: 'Playfair Display', Georgia, serif;
   }
 }

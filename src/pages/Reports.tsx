@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Download } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { PageHeader } from '../components/layout/PageHeader'
 import { LoadingState } from '../components/ui/LoadingState'
 import { StatusBadge } from '../components/ui/StatusBadge'
@@ -26,6 +27,19 @@ interface CustomerReport {
   last_payment: string | null
 }
 
+interface MonthTrend { label: string; attendu: number; encaissé: number }
+
+function getPastPeriod(months: number): string {
+  const d = new Date()
+  d.setMonth(d.getMonth() - months)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function periodShort(p: string): string {
+  const [y, m] = p.split('-')
+  return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' })
+}
+
 export function Reports() {
   const [period, setPeriod] = useState(() => {
     const d = new Date()
@@ -34,6 +48,9 @@ export function Reports() {
   const [loading, setLoading] = useState(false)
   const [sectorReports, setSectorReports] = useState<SectorReport[]>([])
   const [unpaidList, setUnpaidList] = useState<CustomerReport[]>([])
+  const [monthTrend, setMonthTrend] = useState<MonthTrend[]>([])
+  const [globalRate, setGlobalRate] = useState(0)
+  const [totals, setTotals] = useState({ expected: 0, collected: 0, outstanding: 0 })
 
   useEffect(() => {
     setLoading(true)
@@ -47,10 +64,31 @@ export function Reports() {
       supabase.from('payments')
         .select('customer_id, payment_date')
         .order('payment_date', { ascending: false }),
-    ]).then(([chargesRes, unpaidRes, paymentsRes]) => {
+      supabase.from('billing_charges')
+        .select('billing_period, amount_due, amount_paid')
+        .gte('billing_period', getPastPeriod(5))
+        .order('billing_period'),
+    ]).then(([chargesRes, unpaidRes, paymentsRes, trendRes]) => {
       const charges = (chargesRes.data ?? []) as any[]
       const unpaid = (unpaidRes.data ?? []) as any[]
       const payments = (paymentsRes.data ?? []) as any[]
+      const trendData = (trendRes.data ?? []) as any[]
+
+      // Monthly trend
+      const trendMap = new Map<string, { expected: number; collected: number }>()
+      for (const c of trendData) {
+        const prev = trendMap.get(c.billing_period) ?? { expected: 0, collected: 0 }
+        trendMap.set(c.billing_period, { expected: prev.expected + c.amount_due, collected: prev.collected + c.amount_paid })
+      }
+      setMonthTrend(Array.from(trendMap.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([p, v]) => ({
+        label: periodShort(p), attendu: v.expected, 'encaissé': v.collected,
+      })))
+
+      // Period totals
+      const exp = charges.reduce((s: number, c: any) => s + c.amount_due, 0)
+      const col = charges.reduce((s: number, c: any) => s + c.amount_paid, 0)
+      setTotals({ expected: exp, collected: col, outstanding: exp - col })
+      setGlobalRate(exp > 0 ? Math.round((col / exp) * 100) : 0)
 
       // Sector rollup
       const sectorMap = new Map<string, { total: number; expected: number; collected: number }>()
@@ -147,6 +185,48 @@ export function Reports() {
 
       {loading ? <LoadingState /> : (
         <div className="space-y-6">
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="card p-4">
+              <div className="text-xs text-gray-500 mb-1">Total attendu</div>
+              <div className="text-lg font-bold text-gray-900">{formatMoney(totals.expected)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-gray-500 mb-1">Encaissé</div>
+              <div className="text-lg font-bold text-green-700">{formatMoney(totals.collected)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-gray-500 mb-1">Solde restant</div>
+              <div className="text-lg font-bold text-red-600">{formatMoney(totals.outstanding)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-gray-500 mb-1">Taux de recouvrement</div>
+              <div className={`text-lg font-bold ${globalRate >= 80 ? 'text-green-700' : globalRate >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                {globalRate}%
+              </div>
+              <div className="mt-1.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${globalRate}%`, background: globalRate >= 80 ? '#1B6C42' : globalRate >= 50 ? '#f97316' : '#ef4444' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Monthly trend chart */}
+          {monthTrend.length > 1 && (
+            <div className="card p-5">
+              <h2 className="text-sm font-semibold text-gray-900 mb-4">Évolution mensuelle (6 derniers mois)</h2>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={monthTrend} barCategoryGap="30%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={(v: number) => `${Math.round(v / 1000)}k`} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: any) => formatMoney(v)} />
+                  <Bar dataKey="attendu" name="Attendu" fill="#e5e7eb" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="encaissé" name="Encaissé" fill="#1B6C42" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           {/* Sector breakdown */}
           <div className="card overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
@@ -159,31 +239,37 @@ export function Reports() {
                 <tr className="border-b border-gray-200">
                   <th className="table-header">Secteur</th>
                   <th className="table-header text-right">Clients</th>
-                  <th className="table-header text-right">Attendu</th>
-                  <th className="table-header text-right">Encaissé</th>
+                  <th className="table-header text-right hidden sm:table-cell">Attendu</th>
+                  <th className="table-header text-right hidden sm:table-cell">Encaissé</th>
                   <th className="table-header text-right">Solde</th>
-                  <th className="table-header text-right">Taux</th>
+                  <th className="table-header">Taux</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {sectorReports.map(r => (
-                  <tr key={r.sector}>
-                    <td className="table-cell font-medium">{r.sector}</td>
-                    <td className="table-cell text-right text-gray-500">{r.total}</td>
-                    <td className="table-cell text-right">{formatMoney(r.expected)}</td>
-                    <td className="table-cell text-right text-green-700">{formatMoney(r.collected)}</td>
-                    <td className="table-cell text-right">
-                      <span className={r.outstanding > 0 ? 'text-red-600 font-semibold' : 'text-gray-500'}>
-                        {formatMoney(r.outstanding)}
-                      </span>
-                    </td>
-                    <td className="table-cell text-right">
-                      <span className={`font-semibold ${r.expected > 0 && r.collected / r.expected >= 0.8 ? 'text-green-700' : 'text-orange-600'}`}>
-                        {r.expected > 0 ? Math.round((r.collected / r.expected) * 100) : 0}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {sectorReports.map(r => {
+                  const rate = r.expected > 0 ? Math.round((r.collected / r.expected) * 100) : 0
+                  return (
+                    <tr key={r.sector}>
+                      <td className="table-cell font-medium">{r.sector}</td>
+                      <td className="table-cell text-right text-gray-500">{r.total}</td>
+                      <td className="table-cell text-right hidden sm:table-cell">{formatMoney(r.expected)}</td>
+                      <td className="table-cell text-right hidden sm:table-cell text-green-700">{formatMoney(r.collected)}</td>
+                      <td className="table-cell text-right">
+                        <span className={r.outstanding > 0 ? 'text-red-600 font-semibold' : 'text-gray-500'}>
+                          {formatMoney(r.outstanding)}
+                        </span>
+                      </td>
+                      <td className="table-cell">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden min-w-[48px]">
+                            <div className="h-full rounded-full" style={{ width: `${rate}%`, background: rate >= 80 ? '#1B6C42' : rate >= 50 ? '#f97316' : '#ef4444' }} />
+                          </div>
+                          <span className={`text-xs font-semibold ${rate >= 80 ? 'text-green-700' : 'text-orange-600'}`}>{rate}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

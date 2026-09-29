@@ -51,9 +51,15 @@ export function useDashboard() {
   const [sectorStats, setSectorStats] = useState<SectorStat[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [overdueAlertCount, setOverdueAlertCount] = useState(0)
+
+  const refresh = () => setRefreshKey(k => k + 1)
 
   useEffect(() => {
     async function load() {
+      setLoading(true)
       try {
         const period = currentBillingPeriod()
         const today = new Date()
@@ -175,6 +181,14 @@ export function useDashboard() {
               expected: v.expected, collected: v.collected, outstanding: v.expected - v.collected,
             }))
         )
+        // Overdue alert: unpaid/partial from previous months
+        const { data: overdueRows } = await supabase
+          .from('billing_charges')
+          .select('id', { count: 'exact', head: false })
+          .in('status', ['unpaid', 'partial'])
+          .lt('billing_period', period)
+        setOverdueAlertCount(overdueRows?.length ?? 0)
+        setLastUpdated(new Date())
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Erreur de chargement')
       } finally {
@@ -182,9 +196,9 @@ export function useDashboard() {
       }
     }
     load()
-  }, [])
+  }, [refreshKey])
 
-  return { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error }
+  return { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error, refresh, lastUpdated, overdueAlertCount }
 }
 
 function getPastPeriod(months: number): string {

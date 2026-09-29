@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Users, TrendingDown, TrendingUp, Truck, Receipt, CreditCard, Layers } from 'lucide-react'
+import { ChevronRight, Users, TrendingDown, TrendingUp, Truck, Receipt, CreditCard, Layers, RefreshCw, AlertTriangle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area,
@@ -96,15 +96,17 @@ function DebtBar({ name, balance, max }: { name: string; balance: number; max: n
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export function Dashboard() {
-  const { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error } = useDashboard()
+  const { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error, refresh, lastUpdated, overdueAlertCount } = useDashboard()
   const period = currentBillingPeriod()
   const navigate = useNavigate()
 
   if (loading) return (
     <div className="space-y-5">
-      <div>
-        <h1 className="page-title">Tableau de bord</h1>
-        <p className="text-sm text-gray-500">{formatBillingPeriod(period)}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-title">Tableau de bord</h1>
+          <p className="text-sm text-gray-500">{formatBillingPeriod(period)}</p>
+        </div>
       </div>
       <LoadingState rows={8} />
     </div>
@@ -150,18 +152,48 @@ export function Dashboard() {
       <div className="flex items-end justify-between">
         <div>
           <h1 className="page-title">Tableau de bord</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{formatBillingPeriod(period)}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {formatBillingPeriod(period)}
+            {lastUpdated && (
+              <span className="ml-2 text-xs text-gray-400">
+                · mis à jour {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </p>
         </div>
-        <div className="text-right">
-          <div
-            className="text-2xl font-bold"
-            style={{ color: collectionRate >= 80 ? '#1B6C42' : collectionRate >= 50 ? '#d97706' : '#dc2626' }}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={refresh}
+            className="p-1.5 rounded-xl hover:bg-white/60 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Rafraîchir"
           >
-            {collectionRate}%
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <div className="text-right">
+            <div
+              className="text-2xl font-bold"
+              style={{ color: collectionRate >= 80 ? '#1B6C42' : collectionRate >= 50 ? '#d97706' : '#dc2626' }}
+            >
+              {collectionRate}%
+            </div>
+            <div className="text-xs text-gray-400">recouvrement</div>
           </div>
-          <div className="text-xs text-gray-400">recouvrement</div>
         </div>
       </div>
+
+      {/* Overdue alert banner */}
+      {overdueAlertCount > 0 && (
+        <div
+          className="flex items-center gap-3 p-3 rounded-xl cursor-pointer"
+          style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}
+          onClick={() => navigate('/billing')}
+        >
+          <AlertTriangle className="w-4 h-4 text-orange-500 shrink-0" />
+          <p className="text-sm text-orange-800">
+            <strong>{overdueAlertCount} charge(s)</strong> impayée(s) des mois précédents — cliquez pour marquer en retard dans Facturation.
+          </p>
+        </div>
+      )}
 
       {/* Top 4 KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

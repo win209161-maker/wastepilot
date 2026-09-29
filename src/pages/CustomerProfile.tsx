@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, MapPin, CreditCard, Pencil } from 'lucide-react'
+import { ArrowLeft, Phone, MapPin, CreditCard, Pencil, Check, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { LoadingState } from '../components/ui/LoadingState'
@@ -24,6 +24,9 @@ export function CustomerProfile() {
   const [loading, setLoading] = useState(true)
   const [showPayment, setShowPayment] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [editingPrice, setEditingPrice] = useState(false)
+  const [newPrice, setNewPrice] = useState('')
+  const [savingPrice, setSavingPrice] = useState(false)
   const sectors = useSectors()
 
   const { charges, loading: chargesLoading } = useCustomerBilling(id!)
@@ -141,9 +144,48 @@ export function CustomerProfile() {
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Abonnement</h2>
           {activeSub ? (
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-gray-500">Prix mensuel</span>
-                <span className="font-semibold">{formatMoney(activeSub.monthly_price)}</span>
+                {editingPrice ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      className="input w-28 py-1 text-xs text-right"
+                      type="number"
+                      value={newPrice}
+                      onChange={e => setNewPrice(e.target.value)}
+                      autoFocus
+                    />
+                    <button
+                      className="p-1 rounded-lg hover:bg-green-50 text-green-600"
+                      disabled={savingPrice}
+                      onClick={async () => {
+                        const price = parseInt(newPrice)
+                        if (isNaN(price) || price <= 0) return
+                        setSavingPrice(true)
+                        await supabase.from('subscriptions').update({ monthly_price: price } as any).eq('id', activeSub.id)
+                        setSavingPrice(false)
+                        setEditingPrice(false)
+                        reloadCustomer()
+                      }}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button className="p-1 rounded-lg hover:bg-red-50 text-red-400" onClick={() => setEditingPrice(false)}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold">{formatMoney(activeSub.monthly_price)}</span>
+                    <button
+                      className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                      onClick={() => { setNewPrice(String(activeSub.monthly_price)); setEditingPrice(true) }}
+                      title="Modifier le prix"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Début</span>

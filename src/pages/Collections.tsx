@@ -1,12 +1,129 @@
 import { useEffect, useState } from 'react'
-import { Truck, CheckCircle2, XCircle } from 'lucide-react'
+import { Truck, CheckCircle2, XCircle, CalendarPlus, Loader2 } from 'lucide-react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { EmptyState } from '../components/ui/EmptyState'
 import { LoadingState } from '../components/ui/LoadingState'
+import { Modal } from '../components/ui/Modal'
 import { supabase } from '../lib/supabase'
 import { formatDate } from '../lib/utils'
 import type { CollectionSchedule, Customer, Sector } from '../types/database'
+
+// ─── Generate schedules modal ──────────────────────────────────────────────────
+function GenerateSchedulesModal({ onSuccess, onClose }: { onSuccess: () => void; onClose: () => void }) {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [sectorId, setSectorId] = useState('all')
+  const [sectors, setSectors] = useState<{ id: string; name: string; code: string }[]>([])
+  const [preview, setPreview] = useState<{ id: string; name: string; subId: string }[] | null>(null)
+  const [existingCount, setExistingCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [done, setDone] = useState(0)
+
+  useEffect(() => {
+    supabase.from('sectors').select('id, name, code').eq('active', true).order('name')
+      .then(({ data }) => setSectors((data ?? []) as any))
+  }, [])
+
+  async function loadPreview() {
+    setLoading(true)
+    let q = supabase.from('customers')
+      .select('id, first_name, last_name, subscriptions!inner(id, status)')
+      .eq('status', 'active')
+      .eq('subscriptions.status', 'active')
+    if (sectorId !== 'all') q = q.eq('sector_id', sectorId)
+    const [{ data: customers }, { data: existing }] = await Promise.all([
+      q,
+      supabase.from('collection_schedules').select('customer_id').eq('scheduled_date', date),
+    ])
+    const existingIds = new Set((existing ?? []).map((e: any) => e.customer_id))
+    const toCreate = ((customers ?? []) as any[])
+      .filter(c => !existingIds.has(c.id))
+      .map(c => ({ id: c.id, name: `${c.last_name} ${c.first_name}`, subId: c.subscriptions[0]?.id }))
+    setPreview(toCreate)
+    setExistingCount(existingIds.size)
+    setLoading(false)
+  }
+
+  async function generate() {
+    if (!preview || preview.length === 0) return
+    setGenerating(true)
+    const rows = preview.map(c => ({
+      customer_id: c.id,
+      subscription_id: c.subId,
+      scheduled_date: date,
+      status: 'scheduled',
+    }))
+    await supabase.from('collection_schedules').insert(rows as any)
+    setDone(rows.length)
+    setGenerating(false)
+    setTimeout(() => { onSuccess() }, 1000)
+  }
+
+  return (
+    <div className="p-6 space-y-4">
+      <p className="text-sm text-gray-500">
+        Génère une fiche de collecte pour chaque client actif à la date choisie.
+        Les clients déjà planifiés ce jour sont ignorés.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Date de collecte</label>
+          <input className="input" type="date" value={date} onChange={e => { setDate(e.target.value); setPreview(null); setDone(0) }} />
+        </div>
+        <div>
+          <label className="label">Secteur</label>
+          <select className="select" value={sectorId} onChange={e => { setSectorId(e.target.value); setPreview(null); setDone(0) }}>
+            <option value="all">Tous les secteurs</option>
+            {sectors.map(s => <option key={s.id} value={s.id}>{s.name} ({s.code})</option>)}
+          </select>
+        </div>
+      </div>
+
+      {done > 0 && (
+        <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl text-sm text-emerald-700 font-medium">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          {done} collectes planifiées avec succès
+        </div>
+      )}
+
+      {preview && done === 0 && (
+        <div className="space-y-2">
+          {preview.length > 0 ? (
+            <div className="bg-emerald-50 rounded-xl p-3">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                À planifier — {preview.length} clients
+              </div>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {preview.map(c => <div key={c.id} className="text-xs text-gray-700">{c.name}</div>)}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-blue-50 rounded-xl text-sm text-blue-700">
+              Tous les clients actifs sont déjà planifiés ce jour.
+            </div>
+          )}
+          {existingCount > 0 && (
+            <p className="text-xs text-amber-600">{existingCount} client(s) déjà planifié(s) ce jour — ignorés.</p>
+          )}
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+        {!preview ? (
+          <button className="btn-primary flex-1" onClick={loadPreview} disabled={loading}>
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Analyse...</> : 'Prévisualiser'}
+          </button>
+        ) : (
+          <button className="btn-primary flex-1" onClick={generate} disabled={generating || preview.length === 0 || done > 0}>
+            {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</> : `Planifier ${preview.length} collectes`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 type ScheduleRow = CollectionSchedule & {
   customers: (Pick<Customer, 'first_name' | 'last_name' | 'concession' | 'reference'> & {
@@ -20,6 +137,7 @@ export function Collections() {
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0])
   const [statusFilter, setStatusFilter] = useState('all')
   const [updating, setUpdating] = useState<string | null>(null)
+  const [showGenerate, setShowGenerate] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -57,7 +175,16 @@ export function Collections() {
 
   return (
     <div>
-      <PageHeader title="Collectes" description="Suivi des collectes de déchets" />
+      <PageHeader
+        title="Collectes"
+        description="Suivi des collectes de déchets"
+        actions={
+          <button className="btn-primary" onClick={() => setShowGenerate(true)}>
+            <CalendarPlus className="w-4 h-4" />
+            Générer planning
+          </button>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-3 mb-4">
@@ -168,6 +295,20 @@ export function Collections() {
           </div>
         )}
       </div>
+
+      <Modal open={showGenerate} title="📅 Générer le planning de collectes" onClose={() => setShowGenerate(false)}>
+        <GenerateSchedulesModal
+          onSuccess={() => {
+            setShowGenerate(false)
+            setLoading(true)
+            supabase.from('collection_schedules')
+              .select(`*, customers (first_name, last_name, concession, reference, sectors (code))`)
+              .eq('scheduled_date', dateFilter)
+              .then(({ data }) => { setSchedules((data ?? []) as ScheduleRow[]); setLoading(false) })
+          }}
+          onClose={() => setShowGenerate(false)}
+        />
+      </Modal>
     </div>
   )
 }

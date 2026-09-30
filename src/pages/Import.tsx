@@ -54,6 +54,13 @@ function parseDate(val: any): string | null {
   return null
 }
 
+// Ensure any date value reaching the DB is ISO YYYY-MM-DD, not raw DD/MM/YYYY
+function toISODate(d: string | null | undefined): string | null {
+  if (!d) return null
+  if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10)
+  return parseDate(d)
+}
+
 // Detect sheet type from header content — reliable for both XLSX and CSV.
 // Base initiale: col 4 = "Quartier"
 // Billing sheets: col 4 = "Montant à payer"
@@ -329,7 +336,7 @@ export function Import() {
         sector_id: resolveSector(r.sector_code, r.neighborhood),
         concession: r.concession,
         reference: r.reference,
-        request_date: r.request_date,
+        request_date: toISODate(r.request_date),
         status: 'active',
       })))
       if (error) errs.push(`Clients batch ${i}: ${error.message}`)
@@ -380,7 +387,7 @@ export function Import() {
         org_id: org.id,
         customer_id: customerId,
         monthly_price: price,
-        start_date: r.request_date ?? new Date().toISOString().split('T')[0],
+        start_date: toISODate(r.request_date) ?? new Date().toISOString().split('T')[0],
         status: 'active',
         service_frequency: 'monthly',
       })
@@ -398,7 +405,13 @@ export function Import() {
     const subIdByCustomerId = new Map<string, string>()
     for (const s of (allSubs ?? []) as any[]) subIdByCustomerId.set(s.customer_id, s.id)
 
-    // Build billing charges (dedup by sub + period)
+    // Load existing charges to skip duplicates (avoids unique-constraint requirement)
+    setProgress({ phase: 'Charges existantes…', pct: 74 })
+    const { data: existingCharges } = await supabase.from('billing_charges').select('subscription_id, billing_period').eq('org_id', org.id)
+    const existingChargeKeys = new Set<string>()
+    for (const c of (existingCharges ?? []) as any[]) existingChargeKeys.add(`${c.subscription_id}|${c.billing_period}`)
+
+    // Build billing charges (dedup by sub + period, skip existing)
     const chargeMap = new Map<string, any>()
     for (const r of billingRows) {
       const customerId = resolveCustomerId(r)
@@ -407,7 +420,7 @@ export function Import() {
       if (!subId) continue
       const period = extractPeriod(r.sheet)!
       const key = `${subId}|${period}`
-      if (!chargeMap.has(key)) {
+      if (!chargeMap.has(key) && !existingChargeKeys.has(key)) {
         const amtPaid = r.amount_paid ?? 0
         const amtDue = r.amount_due ?? 0
         chargeMap.set(key, {
@@ -426,10 +439,7 @@ export function Import() {
 
     for (let i = 0; i < charges.length; i += CHUNK) {
       setProgress({ phase: `Charges (${i + Math.min(CHUNK, charges.length - i)}/${charges.length})…`, pct: 76 + Math.round(i / Math.max(charges.length, 1) * 22) })
-      const { error } = await supabase.from('billing_charges').upsert(
-        charges.slice(i, i + CHUNK),
-        { onConflict: 'subscription_id,billing_period', ignoreDuplicates: false }
-      )
+      const { error } = await supabase.from('billing_charges').insert(charges.slice(i, i + CHUNK) as any)
       if (error) errs.push(`Charges batch ${i}: ${error.message}`)
     }
 

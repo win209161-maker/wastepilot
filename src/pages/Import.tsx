@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import { parseMultiMonthValue } from '../lib/utils'
 import * as XLSX from 'xlsx'
 
@@ -136,6 +137,7 @@ function parseSheet(ws: XLSX.WorkSheet, name: string): ParsedCustomer[] {
 }
 
 export function Import() {
+  const { org } = useOrg()
   const [_file, setFile] = useState<File | null>(null)
   const [parsed, setParsed] = useState<ParsedCustomer[] | null>(null)
   const [importing, setImporting] = useState(false)
@@ -171,58 +173,126 @@ export function Import() {
     setErrors([])
     let count = 0
 
-    const { data: sectors } = await supabase.from('sectors').select('id, code, name')
+    // Build sector map: code, name, AND numeric order (1=first alphabetically, etc.)
+    const { data: sectors } = await supabase.from('sectors').select('id, code, name').order('name')
     const sectorMap = new Map<string, string>()
-    for (const s of (sectors ?? []) as any[]) {
-      sectorMap.set(s.code.toUpperCase(), s.id)
-      sectorMap.set(s.name.toUpperCase(), s.id)
+    for (let i = 0; i < (sectors ?? []).length; i++) {
+      const s = (sectors as any[])[i]
+      sectorMap.set(s.code.toUpperCase().replace(/\s+/g, ''), s.id)
+      sectorMap.set(s.name.toUpperCase().replace(/\s+/g, ''), s.id)
+      sectorMap.set(String(i + 1), s.id) // numeric: 1, 2, 3 → first, second, third sector
+    }
+
+    const resolveSector = (code: string | null, neighborhood: string | null): string | null => {
+      const tries = [
+        code?.toUpperCase().replace(/\s+/g, ''),
+        code?.replace(/[^A-Z0-9]/gi, '').toUpperCase(),
+        neighborhood?.toUpperCase().replace(/\s+/g, ''),
+      ]
+      for (const t of tries) if (t && sectorMap.has(t)) return sectorMap.get(t)!
+      return null
+    }
+
+    const extractPeriod = (sheet: string): string | null => {
+      const s = sheet.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      const yr = s.match(/20(\d{2})/); if (!yr) return null
+      const year = `20${yr[1]}`
+      const months: Record<string, string> = {
+        jan: '01', fev: '02', mar: '03', avr: '04', mai: '05', juin: '06',
+        jul: '07', juil: '07', aou: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+        janvier: '01', fevrier: '02', mars: '03', avril: '04', juillet: '07',
+        aout: '08', septembre: '09', octobre: '10', novembre: '11', decembre: '12',
+      }
+      for (const [k, v] of Object.entries(months)) if (s.includes(k)) return `${year}-${v}`
+      return null
     }
 
     const toImport = parsed.filter(r => !r.needs_review)
 
     for (const row of toImport) {
       try {
-        const sectorId = row.sector_code ? (
-          sectorMap.get(row.sector_code) ??
-          sectorMap.get(row.sector_code.replace(/[^A-Z0-9]/g, '')) ??
-          null
-        ) : null
+        const sectorId = resolveSector(row.sector_code, row.neighborhood)
+        const customerPayload: any = {
+          org_id: org!.id,
+          last_name: row.last_name,
+          first_name: row.first_name,
+          phone: row.phone,
+          subscriber_id: row.subscriber_id,
+          neighborhood: row.neighborhood,
+          sector_id: sectorId,
+          concession: row.concession,
+          reference: row.reference,
+          request_date: row.request_date,
+          status: 'active',
+        }
 
-        // Upsert customer
-        const { data: customer, error: custErr } = await supabase
-          .from('customers')
-          .upsert({
-            last_name: row.last_name,
-            first_name: row.first_name,
-            phone: row.phone,
-            subscriber_id: row.subscriber_id,
-            neighborhood: row.neighborhood,
-            sector_id: sectorId,
-            concession: row.concession,
-            reference: row.reference,
-            request_date: row.request_date,
-            status: 'active',
-          } as any, {
-            onConflict: 'subscriber_id',
-            ignoreDuplicates: false,
-          })
-          .select()
-          .single()
+        let customer: any
+        let custErr: any
+
+        if (row.subscriber_id) {
+          // Upsert by unique subscriber_id
+          const res = await supabase
+            .from('customers')
+            .upsert(customerPayload, { onConflict: 'org_id,subscriber_id', ignoreDuplicates: false })
+            .select().single()
+          customer = res.data; custErr = res.error
+        } else {
+          // Check for existing customer by name+phone to prevent duplicates on re-import
+          const { data: existing } = await supabase.from('customers').select('id')
+            .eq('org_id', org!.id)
+            .eq('last_name', row.last_name)
+            .eq('first_name', row.first_name)
+            .eq('phone', row.phone ?? '')
+            .maybeSingle()
+          if (existing) {
+            customer = existing
+          } else {
+            const res = await supabase.from('customers').insert(customerPayload).select().single()
+            customer = res.data; custErr = res.error
+          }
+        }
 
         if (custErr || !customer) {
           setErrors(e => [...e, `${row.last_name} ${row.first_name}: ${custErr?.message}`])
           continue
         }
 
-        // Create subscription
+        // Find or create subscription (avoid duplicates on re-import)
+        let subscriptionId: string | null = null
         if (row.monthly_price && row.monthly_price > 0) {
-          await supabase.from('subscriptions').upsert({
-            customer_id: (customer as any).id,
-            monthly_price: row.monthly_price,
-            start_date: row.request_date ?? new Date().toISOString().split('T')[0],
-            status: 'active',
-            service_frequency: 'monthly',
-          } as any, { onConflict: 'customer_id', ignoreDuplicates: true })
+          const { data: existingSub } = await supabase.from('subscriptions').select('id')
+            .eq('customer_id', customer.id).eq('status', 'active').maybeSingle()
+          if (existingSub) {
+            subscriptionId = existingSub.id
+          } else {
+            const { data: newSub } = await supabase.from('subscriptions').insert({
+              org_id: org!.id,
+              customer_id: customer.id,
+              monthly_price: row.monthly_price,
+              start_date: row.request_date ?? new Date().toISOString().split('T')[0],
+              status: 'active',
+              service_frequency: 'monthly',
+            } as any).select('id').single()
+            subscriptionId = newSub?.id ?? null
+          }
+        }
+
+        // Create billing charge if this sheet has a billing period
+        const billingPeriod = extractPeriod(row.sheet)
+        if (billingPeriod && subscriptionId && row.amount_due && row.amount_due > 0) {
+          const amtPaid = row.amount_paid ?? 0
+          const balance = row.amount_due - amtPaid
+          const status = amtPaid >= row.amount_due ? 'paid' : amtPaid > 0 ? 'partial' : 'unpaid'
+          await supabase.from('billing_charges').upsert({
+            org_id: org!.id,
+            customer_id: customer.id,
+            subscription_id: subscriptionId,
+            billing_period: billingPeriod,
+            amount_due: row.amount_due,
+            amount_paid: amtPaid,
+            balance,
+            status,
+          } as any, { onConflict: 'subscription_id,billing_period', ignoreDuplicates: false })
         }
 
         count++

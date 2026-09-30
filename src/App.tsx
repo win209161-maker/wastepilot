@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
+import { OrgProvider, useOrg } from './context/OrgContext'
 import { Sidebar, MobileHeader } from './components/layout/Sidebar'
 import { Login } from './pages/Login'
+import { LandingPage } from './pages/LandingPage'
+import { OrgSetup } from './pages/OrgSetup'
 import { Dashboard } from './pages/Dashboard'
 import { Customers } from './pages/Customers'
 import { CustomerProfile } from './pages/CustomerProfile'
@@ -13,6 +16,7 @@ import { Collections } from './pages/Collections'
 import { Reports } from './pages/Reports'
 import { Import } from './pages/Import'
 import { Settings } from './pages/Settings'
+import { Privacy } from './pages/Privacy'
 
 function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -42,6 +46,22 @@ function AppShell() {
   )
 }
 
+function OrgGate() {
+  const { org, loading } = useOrg()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-sage)' }}>
+        <div className="w-8 h-8 border-2 border-gray-300 rounded-full animate-spin" style={{ borderTopColor: 'var(--color-brand)' }} />
+      </div>
+    )
+  }
+
+  if (!org) return <OrgSetup />
+
+  return <AppShell />
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
 
@@ -53,7 +73,10 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Still loading
+  if (window.location.pathname === '/privacy') {
+    return <Privacy />
+  }
+
   if (session === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-sage)' }}>
@@ -63,12 +86,16 @@ export default function App() {
   }
 
   if (!session) {
+    const path = window.location.pathname
+    if (path === '/' || path === '/landing') return <LandingPage />
     return <Login />
   }
 
   return (
     <BrowserRouter>
-      <AppShell />
+      <OrgProvider>
+        <OrgGate />
+      </OrgProvider>
     </BrowserRouter>
   )
 }

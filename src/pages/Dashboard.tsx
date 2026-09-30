@@ -96,8 +96,8 @@ function DebtBar({ name, balance, max }: { name: string; balance: number; max: n
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export function Dashboard() {
-  const { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error, refresh, lastUpdated, overdueAlertCount } = useDashboard()
-  const period = currentBillingPeriod()
+  const { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error, refresh, lastUpdated, overdueAlertCount, activePeriod } = useDashboard()
+  const period = activePeriod || currentBillingPeriod()
   const navigate = useNavigate()
 
   if (loading) return (

@@ -6,11 +6,13 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { LoadingState } from '../components/ui/LoadingState'
 import { Modal } from '../components/ui/Modal'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import { formatDate } from '../lib/utils'
 import type { CollectionSchedule, Customer, Sector } from '../types/database'
 
 // ─── Generate schedules modal ──────────────────────────────────────────────────
 function GenerateSchedulesModal({ onSuccess, onClose }: { onSuccess: () => void; onClose: () => void }) {
+  const { org } = useOrg()
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [sectorId, setSectorId] = useState('all')
   const [sectors, setSectors] = useState<{ id: string; name: string; code: string }[]>([])
@@ -49,6 +51,7 @@ function GenerateSchedulesModal({ onSuccess, onClose }: { onSuccess: () => void;
     if (!preview || preview.length === 0) return
     setGenerating(true)
     const rows = preview.map(c => ({
+      org_id: org!.id,
       customer_id: c.id,
       subscription_id: c.subId,
       scheduled_date: date,
@@ -187,7 +190,7 @@ export function Collections() {
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <div className="card p-3 text-center">
           <div className="text-lg font-bold text-gray-900">{stats.total}</div>
           <div className="text-xs text-gray-500">Total</div>

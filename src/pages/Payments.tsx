@@ -43,7 +43,7 @@ function PaymentStats() {
   }, [])
 
   return (
-    <div className="grid grid-cols-3 gap-3 mb-4">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
       <div className="card p-4">
         <div className="text-xs text-gray-500 mb-1">Encaissé aujourd'hui</div>
         <div className="text-lg font-bold" style={{ color: 'var(--color-brand)' }}>

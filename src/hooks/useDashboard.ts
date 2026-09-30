@@ -54,6 +54,7 @@ export function useDashboard() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [overdueAlertCount, setOverdueAlertCount] = useState(0)
+  const [activePeriod, setActivePeriod] = useState<string>('')
 
   const refresh = () => setRefreshKey(k => k + 1)
 
@@ -61,7 +62,16 @@ export function useDashboard() {
     async function load() {
       setLoading(true)
       try {
-        const period = currentBillingPeriod()
+        // Use the most recent period with billing data, fallback to current month
+        const latestRes = await supabase
+          .from('billing_charges')
+          .select('billing_period')
+          .order('billing_period', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const period = latestRes.data?.billing_period ?? currentBillingPeriod()
+        setActivePeriod(period)
+
         const today = new Date()
         const todayStr = today.toISOString().split('T')[0]
 
@@ -72,7 +82,7 @@ export function useDashboard() {
 
         const [customersRes, chargesCurrentRes, chargesHistoryRes, collectionsRes, paymentsWeekRes, sectorsRes] =
           await Promise.all([
-            supabase.from('customers').select('id, first_name, last_name, status, sector_id'),
+            supabase.from('customers').select('id, first_name, last_name, status, sector_id, subscriber_id, phone').range(0, 4999),
             supabase.from('billing_charges')
               .select('customer_id, amount_due, amount_paid, balance, status')
               .eq('billing_period', period),
@@ -91,7 +101,16 @@ export function useDashboard() {
         if (customersRes.error) throw customersRes.error
         if (chargesCurrentRes.error) throw chargesCurrentRes.error
 
-        const customers = customersRes.data ?? []
+        const rawCustomers = customersRes.data ?? []
+        const dedupSeen = new Set<string>()
+        const customers = rawCustomers.filter(c => {
+          const key = c.subscriber_id
+            ? `sub:${c.subscriber_id}`
+            : `name:${(c.last_name ?? '').toLowerCase()}|${(c.first_name ?? '').toLowerCase()}|${c.phone ?? ''}`
+          if (dedupSeen.has(key)) return false
+          dedupSeen.add(key)
+          return true
+        })
         const charges = chargesCurrentRes.data ?? []
         const history = chargesHistoryRes.data ?? []
         const collections = collectionsRes.data ?? []
@@ -198,7 +217,7 @@ export function useDashboard() {
     load()
   }, [refreshKey])
 
-  return { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error, refresh, lastUpdated, overdueAlertCount }
+  return { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error, refresh, lastUpdated, overdueAlertCount, activePeriod }
 }
 
 function getPastPeriod(months: number): string {

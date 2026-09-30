@@ -3,9 +3,32 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      organizations: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['organizations']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['organizations']['Insert']>
+      }
+      org_members: {
+        Row: {
+          id: string
+          org_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'member'
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['org_members']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['org_members']['Insert']>
+      }
       sectors: {
         Row: {
           id: string
+          org_id: string
           name: string
           code: string
           description: string | null
@@ -18,6 +41,7 @@ export interface Database {
       customers: {
         Row: {
           id: string
+          org_id: string
           subscriber_id: string | null
           first_name: string
           last_name: string
@@ -41,6 +65,7 @@ export interface Database {
       subscriptions: {
         Row: {
           id: string
+          org_id: string
           customer_id: string
           monthly_price: number
           start_date: string
@@ -58,6 +83,7 @@ export interface Database {
       billing_charges: {
         Row: {
           id: string
+          org_id: string
           customer_id: string
           subscription_id: string
           billing_period: string
@@ -78,6 +104,7 @@ export interface Database {
       payments: {
         Row: {
           id: string
+          org_id: string
           customer_id: string
           amount: number
           payment_method: string
@@ -104,6 +131,7 @@ export interface Database {
       collection_schedules: {
         Row: {
           id: string
+          org_id: string
           customer_id: string
           subscription_id: string
           scheduled_date: string
@@ -122,7 +150,14 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_org: {
+        Args: { p_name: string; p_slug: string }
+        Returns: string
+      }
+      current_user_orgs: {
+        Args: Record<string, never>
+        Returns: string[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -131,6 +166,8 @@ export interface Database {
 }
 
 // Convenience types
+export type Organization = Database['public']['Tables']['organizations']['Row']
+export type OrgMember = Database['public']['Tables']['org_members']['Row']
 export type Sector = Database['public']['Tables']['sectors']['Row']
 export type Customer = Database['public']['Tables']['customers']['Row']
 export type Subscription = Database['public']['Tables']['subscriptions']['Row']

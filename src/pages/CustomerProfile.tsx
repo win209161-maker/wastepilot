@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, MapPin, CreditCard, Pencil, Check, X } from 'lucide-react'
+import { ArrowLeft, Phone, MapPin, CreditCard, Pencil, Check, X, Download, MessageCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { LoadingState } from '../components/ui/LoadingState'
@@ -10,7 +10,15 @@ import { CustomerForm } from '../components/CustomerForm'
 import { useCustomerBilling } from '../hooks/useBilling'
 import { useSectors } from '../hooks/useCustomers'
 import { formatMoney, formatDate, formatBillingPeriod } from '../lib/utils'
+import { generateReceipt, downloadPdf, type ReceiptData } from '../lib/pdf'
 import type { Customer, Sector, Subscription } from '../types/database'
+
+const METHOD_LABEL: Record<string, string> = {
+  cash: 'Espèces',
+  mobile_money: 'Mobile Money',
+  bank_transfer: 'Virement',
+  other: 'Autre',
+}
 
 type FullCustomer = Customer & {
   sectors: Sector | null
@@ -30,6 +38,17 @@ export function CustomerProfile() {
   const sectors = useSectors()
 
   const { charges, loading: chargesLoading } = useCustomerBilling(id!)
+  const [payments, setPayments] = useState<any[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(true)
+
+  function loadPayments() {
+    if (!id) return
+    supabase.from('payments')
+      .select('*, payment_allocations(billing_charges(billing_period))')
+      .eq('customer_id', id)
+      .order('payment_date', { ascending: false })
+      .then(({ data }) => { setPayments(data ?? []); setPaymentsLoading(false) })
+  }
 
   function reloadCustomer() {
     if (!id) return
@@ -49,12 +68,56 @@ export function CustomerProfile() {
         setCustomer(data as unknown as FullCustomer)
         setLoading(false)
       })
+    loadPayments()
   }, [id])
 
   const totalDue = charges.reduce((s, c) => s + c.amount_due, 0)
   const totalPaid = charges.reduce((s, c) => s + c.amount_paid, 0)
   const totalBalance = totalDue - totalPaid
   const activeSub = customer?.subscriptions.find(s => s.status === 'active')
+
+  function handleDownloadReceipt(p: any) {
+    if (!customer) return
+    const periods: string[] = (p.payment_allocations ?? [])
+      .map((a: any) => a.billing_charges?.billing_period)
+      .filter(Boolean)
+    const data: ReceiptData = {
+      paymentId: p.id,
+      customerName: `${customer.last_name} ${customer.first_name}`,
+      subscriberId: customer.subscriber_id ?? null,
+      phone: customer.phone ?? null,
+      amount: p.amount,
+      paymentDate: p.payment_date,
+      paymentMethod: p.payment_method,
+      reference: p.reference ?? null,
+      periods,
+    }
+    const doc = generateReceipt(data)
+    downloadPdf(doc, `Recu-WP-${p.payment_date}-${customer.last_name}.pdf`)
+  }
+
+  function handleWhatsAppReceipt(p: any) {
+    if (!customer?.phone) return
+    const digits = customer.phone.replace(/\D/g, '')
+    const number = digits.startsWith('224') ? digits : `224${digits}`
+    const periods: string[] = (p.payment_allocations ?? [])
+      .map((a: any) => a.billing_charges?.billing_period)
+      .filter(Boolean)
+    const msg = [
+      `WastePilot Conakry`,
+      `RECU DE PAIEMENT`,
+      ``,
+      `Client: ${customer.last_name} ${customer.first_name}`,
+      `Montant recu: ${formatMoney(p.amount)} FG`,
+      `Date: ${new Date(p.payment_date).toLocaleDateString('fr-FR')}`,
+      `Mode: ${METHOD_LABEL[p.payment_method] ?? p.payment_method}`,
+      ...(p.reference ? [`Reference: ${p.reference}`] : []),
+      ...(periods.length > 0 ? [`Periode(s): ${periods.map(formatBillingPeriod).join(', ')}`] : []),
+      ``,
+      `Merci pour votre paiement. — WastePilot Conakry`,
+    ].join('\n')
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank')
+  }
 
   if (loading) return <LoadingState />
 
@@ -121,7 +184,7 @@ export function CustomerProfile() {
       </div>
 
       {/* Financial summary */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         <div className="card p-4 text-center">
           <div className="text-xs text-gray-500 mb-1">Total facturé</div>
           <div className="text-lg font-bold text-gray-900">{formatMoney(totalDue)}</div>
@@ -151,6 +214,9 @@ export function CustomerProfile() {
                     <input
                       className="input w-28 py-1 text-xs text-right"
                       type="number"
+                      min="1000"
+                      max="10000000"
+                      step="1"
                       value={newPrice}
                       onChange={e => setNewPrice(e.target.value)}
                       autoFocus
@@ -160,7 +226,7 @@ export function CustomerProfile() {
                       disabled={savingPrice}
                       onClick={async () => {
                         const price = parseInt(newPrice)
-                        if (isNaN(price) || price <= 0) return
+                        if (isNaN(price) || price < 1000 || price > 10000000) return
                         setSavingPrice(true)
                         await supabase.from('subscriptions').update({ monthly_price: price } as any).eq('id', activeSub.id)
                         setSavingPrice(false)
@@ -254,13 +320,74 @@ export function CustomerProfile() {
         </div>
       </div>
 
+      {/* Payment history */}
+      <div className="card overflow-hidden mt-4">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">Paiements effectués</h2>
+          <span className="text-xs text-gray-400">{payments.length} paiement{payments.length !== 1 ? 's' : ''}</span>
+        </div>
+        {paymentsLoading ? (
+          <LoadingState rows={3} />
+        ) : payments.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-400">Aucun paiement enregistré</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="table-header">Date</th>
+                  <th className="table-header text-right">Montant</th>
+                  <th className="table-header hidden sm:table-cell">Mode</th>
+                  <th className="table-header hidden md:table-cell">Référence</th>
+                  <th className="table-header text-right"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {payments.map(p => (
+                  <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="table-cell font-medium">{formatDate(p.payment_date)}</td>
+                    <td className="table-cell text-right font-semibold text-green-700">{formatMoney(p.amount)}</td>
+                    <td className="table-cell hidden sm:table-cell text-gray-500">{METHOD_LABEL[p.payment_method] ?? p.payment_method}</td>
+                    <td className="table-cell hidden md:table-cell text-gray-400 text-xs">{p.reference ?? '—'}</td>
+                    <td className="table-cell text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleDownloadReceipt(p)}
+                          title="Télécharger le reçu PDF"
+                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span className="hidden sm:inline">Reçu</span>
+                        </button>
+                        {customer?.phone && (
+                          <button
+                            onClick={() => handleWhatsAppReceipt(p)}
+                            title="Envoyer reçu par WhatsApp"
+                            className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white transition-colors"
+                          >
+                            <MessageCircle className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <Modal open={showPayment} title="Enregistrer un paiement" onClose={() => setShowPayment(false)}>
         <PaymentForm
           customerId={customer.id}
           customerName={`${customer.last_name} ${customer.first_name}`}
           outstandingCharges={charges.filter(c => c.status !== 'paid' && c.status !== 'waived')}
+          phone={customer.phone}
+          subscriberId={customer.subscriber_id}
           onSuccess={() => {
             setShowPayment(false)
+            loadPayments()
             window.location.reload()
           }}
           onCancel={() => setShowPayment(false)}

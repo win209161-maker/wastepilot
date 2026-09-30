@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { supabase } from '../../lib/supabase'
+import { useOrg } from '../../context/OrgContext'
 
 const NAV = [
   { to: '/',             label: 'Tableau de bord', icon: LayoutDashboard },
@@ -40,6 +41,7 @@ const Logo = () => (
 )
 
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
+  const { org } = useOrg()
   const content = (
     <div className="flex flex-col h-full">
       <div className="px-4 py-5">
@@ -64,7 +66,8 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       </nav>
 
       <div className="px-4 py-4 space-y-2">
-        <p className="text-xs text-gray-400">Alpha Yaya · Koloma · Conakry</p>
+        <p className="text-xs text-gray-400 truncate">{org?.name ?? 'WastePilot'}</p>
+        <p className="text-[10px] text-gray-300 font-mono">v2.1 · 30/09/2026</p>
         <button
           onClick={() => supabase.auth.signOut()}
           className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors"

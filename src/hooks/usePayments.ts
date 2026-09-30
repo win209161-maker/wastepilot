@@ -31,6 +31,7 @@ export function usePayments(page = 0, pageSize = 20) {
 }
 
 export interface RecordPaymentInput {
+  orgId: string
   customerId: string
   amount: number
   paymentMethod: string
@@ -39,10 +40,11 @@ export interface RecordPaymentInput {
   notes?: string
 }
 
-export async function recordPayment(input: RecordPaymentInput): Promise<{ error?: string }> {
+export async function recordPayment(input: RecordPaymentInput): Promise<{ error?: string; paymentId?: string; coveredPeriods?: string[] }> {
   const { data: payment, error: payErr } = await supabase
     .from('payments')
     .insert({
+      org_id: input.orgId,
       customer_id: input.customerId,
       amount: input.amount,
       payment_method: input.paymentMethod,
@@ -55,7 +57,6 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ error?
 
   if (payErr) return { error: payErr.message }
 
-  // Allocate to oldest outstanding charges
   const { data: charges, error: chargeErr } = await supabase
     .from('billing_charges')
     .select('*')
@@ -66,6 +67,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ error?
   if (chargeErr) return { error: chargeErr.message }
 
   let remaining = input.amount
+  const coveredPeriods: string[] = []
   for (const charge of charges ?? []) {
     if (remaining <= 0) break
     const canApply = Math.min(remaining, charge.balance)
@@ -82,8 +84,9 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ error?
       .update({ amount_paid: newPaid } as any)
       .eq('id', (charge as any).id)
 
+    coveredPeriods.push(charge.billing_period)
     remaining -= canApply
   }
 
-  return {}
+  return { paymentId: payment.id, coveredPeriods }
 }

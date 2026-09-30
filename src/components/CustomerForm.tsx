@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import type { Sector } from '../types/database'
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {}, customerId }: Props) {
+  const { org } = useOrg()
   const editMode = !!customerId
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -60,12 +62,16 @@ export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {},
         if (err) throw err
       } else {
         const { data: customer, error: custErr } = await supabase
-          .from('customers').insert(payload).select().single()
+          .from('customers').insert({ ...payload, org_id: org!.id }).select().single()
         if (custErr) throw custErr
 
         const price = parseInt(form.monthly_price)
+        if (!isNaN(price) && (price < 1000 || price > 10000000)) {
+          throw new Error('Prix mensuel invalide — doit être entre 1 000 et 10 000 000 FG')
+        }
         if (!isNaN(price) && price > 0) {
           const { error: subErr } = await supabase.from('subscriptions').insert({
+            org_id: org!.id,
             customer_id: customer.id,
             monthly_price: price,
             start_date: form.request_date || new Date().toISOString().split('T')[0],
@@ -158,12 +164,14 @@ export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {},
             <input
               className="input"
               type="number"
-              min="1"
-              step="1000"
+              min="1000"
+              max="10000000"
+              step="1"
               value={form.monthly_price}
               onChange={e => set('monthly_price', e.target.value)}
               required
             />
+            <p className="text-xs text-gray-400 mt-1">Min: 1 000 · Max: 10 000 000 FG</p>
           </div>
         )}
       </div>

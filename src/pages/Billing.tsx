@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, ChevronLeft, ChevronRight, Zap, MessageCircle, Loader2, CheckCircle2, AlertTriangle, Clock, CreditCard } from 'lucide-react'
+import { Plus, ChevronLeft, ChevronRight, Zap, MessageCircle, Loader2, CheckCircle2, AlertTriangle, Clock, CreditCard, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { StatusBadge } from '../components/ui/StatusBadge'
@@ -11,9 +11,12 @@ import { PaymentForm } from '../components/PaymentForm'
 import { useBilling, type ChargeRow } from '../hooks/useBilling'
 import { formatMoney, formatBillingPeriod, currentBillingPeriod } from '../lib/utils'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
+import { generateInvoice, downloadPdf, type InvoiceData } from '../lib/pdf'
 
 // ─── Add single charge form ────────────────────────────────────────────────────
 function AddChargeForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+  const { org } = useOrg()
   const [form, setForm] = useState({
     customer_id: '',
     billing_period: currentBillingPeriod(),
@@ -37,9 +40,18 @@ function AddChargeForm({ onSuccess, onCancel }: { onSuccess: () => void; onCance
     if (!sub) { setError('Client ou abonnement introuvable'); return }
     const price = parseInt(form.monthly_price)
     const months = parseInt(form.months_billed)
+    if (isNaN(price) || price < 1000 || price > 10000000) {
+      setError('Prix invalide — entre 1 000 et 10 000 000 FG')
+      return
+    }
+    if (isNaN(months) || months < 1 || months > 24) {
+      setError('Nombre de mois invalide — entre 1 et 24')
+      return
+    }
     setSaving(true)
     setError(null)
     const { error: err } = await supabase.from('billing_charges').insert({
+      org_id: org!.id,
       customer_id: form.customer_id,
       subscription_id: sub.id,
       billing_period: form.billing_period,
@@ -63,18 +75,19 @@ function AddChargeForm({ onSuccess, onCancel }: { onSuccess: () => void; onCance
           {customers.map(c => <option key={c.id} value={c.id}>{c.last_name} {c.first_name}</option>)}
         </select>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="label">Période</label>
           <input className="input font-mono" value={form.billing_period} onChange={e => setForm(f => ({ ...f, billing_period: e.target.value }))} pattern="\d{4}-\d{2}" placeholder="2026-01" required />
         </div>
         <div>
           <label className="label">Prix/mois (FG)</label>
-          <input className="input" type="number" min="1" value={form.monthly_price} onChange={e => setForm(f => ({ ...f, monthly_price: e.target.value }))} required />
+          <input className="input" type="number" min="1000" max="10000000" step="1" value={form.monthly_price} onChange={e => setForm(f => ({ ...f, monthly_price: e.target.value }))} required />
+          <p className="text-xs text-gray-400 mt-0.5">1 000 – 10 000 000</p>
         </div>
         <div>
           <label className="label">Nb mois</label>
-          <input className="input" type="number" min="1" max="12" value={form.months_billed} onChange={e => setForm(f => ({ ...f, months_billed: e.target.value }))} required />
+          <input className="input" type="number" min="1" max="24" value={form.months_billed} onChange={e => setForm(f => ({ ...f, months_billed: e.target.value }))} required />
         </div>
       </div>
       <div className="p-3 rounded-xl" style={{ background: 'var(--color-sage)' }}>
@@ -101,6 +114,7 @@ interface GeneratePreview {
 function GenerateBillingModal({ period, onSuccess, onCancel }: {
   period: string; onSuccess: () => void; onCancel: () => void
 }) {
+  const { org } = useOrg()
   const [targetPeriod, setTargetPeriod] = useState(period)
   const [preview, setPreview] = useState<GeneratePreview | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
@@ -152,6 +166,7 @@ function GenerateBillingModal({ period, onSuccess, onCancel }: {
     let count = 0
 
     const rows = preview.toCreate.map(r => ({
+      org_id: org!.id,
       customer_id: r.customerId,
       subscription_id: r.subId,
       billing_period: targetPeriod,
@@ -393,18 +408,29 @@ function WhatsAppModal({ period, onClose }: { period: string; onClose: () => voi
 // ─── Main Billing page ─────────────────────────────────────────────────────────
 export function Billing() {
   const navigate = useNavigate()
-  const [period, setPeriod] = useState(currentBillingPeriod())
+  const [period, setPeriod] = useState('')
+
+  useEffect(() => {
+    supabase.from('billing_charges')
+      .select('billing_period')
+      .order('billing_period', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => setPeriod(data?.billing_period ?? currentBillingPeriod()))
+  }, [])
   const [statusFilter, setStatusFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [showGenerate, setShowGenerate] = useState(false)
   const [showWhatsApp, setShowWhatsApp] = useState(false)
   // Amélioration 3: inline payment
   const [payCharge, setPayCharge] = useState<ChargeRow | null>(null)
+  // PDF invoice
+  const [invoiceCharge, setInvoiceCharge] = useState<ChargeRow | null>(null)
   // Amélioration 4: mark overdue
   const [overdueCount, setOverdueCount] = useState(0)
   const [showOverdueConfirm, setShowOverdueConfirm] = useState(false)
   const [markingOverdue, setMarkingOverdue] = useState(false)
-  const { charges, loading, summary, refresh } = useBilling(period, statusFilter)
+  const { charges, loading, summary, refresh } = useBilling(period || '__none__', statusFilter)
 
   function prevMonth() {
     const [y, m] = period.split('-').map(Number)
@@ -455,6 +481,53 @@ export function Billing() {
 
   const unpaidCount = charges.filter(c => ['unpaid', 'partial', 'overdue'].includes(c.status)).length
 
+  function buildInvoiceData(c: ChargeRow): InvoiceData {
+    return {
+      chargeId: c.id,
+      customerName: `${c.customers?.last_name ?? ''} ${c.customers?.first_name ?? ''}`.trim(),
+      subscriberId: (c.customers as any)?.subscriber_id ?? null,
+      sectorName: (c.customers as any)?.sectors?.code ?? null,
+      phone: (c.customers as any)?.phone ?? null,
+      billingPeriod: c.billing_period,
+      monthlyPrice: c.monthly_price,
+      monthsBilled: c.months_billed,
+      amountDue: c.amount_due,
+      amountPaid: c.amount_paid,
+      balance: c.balance,
+      status: c.status,
+    }
+  }
+
+  function handleDownloadInvoice(c: ChargeRow) {
+    const data = buildInvoiceData(c)
+    const doc = generateInvoice(data)
+    downloadPdf(doc, `Facture-WP-${c.billing_period}-${data.customerName.replace(/ /g, '_')}.pdf`)
+    setInvoiceCharge(c)
+  }
+
+  function handleWhatsAppInvoice(c: ChargeRow) {
+    const data = buildInvoiceData(c)
+    const phone = data.phone?.replace(/\D/g, '') ?? ''
+    if (!phone) return
+    const number = phone.startsWith('224') ? phone : `224${phone}`
+    const invoiceNum = `WP-${c.billing_period.replace('-', '')}-${c.id.slice(-6).toUpperCase()}`
+    const statusLabel = c.status === 'paid' ? 'PAYE' : c.status === 'overdue' ? 'EN RETARD' : c.status === 'partial' ? 'PARTIEL' : 'IMPAYE'
+    const msg = [
+      `WastePilot Conakry`,
+      `FACTURE N ${invoiceNum}`,
+      ``,
+      `Client: ${data.customerName}`,
+      `Periode: ${formatBillingPeriod(c.billing_period)}`,
+      `Montant du: ${formatMoney(c.amount_due)} FG`,
+      ...(c.amount_paid > 0 ? [`Deja regle: ${formatMoney(c.amount_paid)} FG`] : []),
+      `Solde a payer: ${formatMoney(c.balance)} FG`,
+      `Statut: ${statusLabel}`,
+      ``,
+      `Merci de regler votre solde pour maintenir votre service de collecte.`,
+    ].join('\n')
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
   return (
     <div>
       <PageHeader
@@ -499,7 +572,7 @@ export function Billing() {
               <ChevronLeft className="w-4 h-4 text-gray-500" />
             </button>
             <div className="text-base font-semibold text-gray-900 min-w-[160px] text-center">
-              {formatBillingPeriod(period)}
+              {period ? formatBillingPeriod(period) : '…'}
             </div>
             <button className="p-1.5 rounded-xl hover:bg-gray-100" onClick={nextMonth}>
               <ChevronRight className="w-4 h-4 text-gray-500" />
@@ -566,19 +639,40 @@ export function Billing() {
                       </span>
                     </td>
                     <td className="table-cell"><StatusBadge status={c.status} /></td>
-                    {/* Amélioration 3: inline pay button */}
+                    {/* Amélioration 3: inline pay + invoice buttons */}
                     <td className="table-cell">
-                      {['unpaid', 'partial', 'overdue'].includes(c.status) && (
-                        <button
-                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-colors"
-                          style={{ background: 'var(--color-brand)', color: 'white' }}
-                          onClick={e => { e.stopPropagation(); setPayCharge(c) }}
-                          title="Enregistrer un paiement"
-                        >
-                          <CreditCard className="w-3 h-3" />
-                          Payer
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {['unpaid', 'partial', 'overdue'].includes(c.status) && (
+                          <>
+                            <button
+                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-colors"
+                              style={{ background: 'var(--color-brand)', color: 'white' }}
+                              onClick={e => { e.stopPropagation(); setPayCharge(c) }}
+                              title="Enregistrer un paiement"
+                            >
+                              <CreditCard className="w-3 h-3" />
+                              <span className="hidden sm:inline">Payer</span>
+                            </button>
+                            <button
+                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                              onClick={e => { e.stopPropagation(); handleDownloadInvoice(c) }}
+                              title="Télécharger la facture PDF"
+                            >
+                              <FileText className="w-3 h-3" />
+                              <span className="hidden sm:inline">Facture</span>
+                            </button>
+                            {(c.customers as any)?.phone && (
+                              <button
+                                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white transition-colors"
+                                onClick={e => { e.stopPropagation(); handleWhatsAppInvoice(c) }}
+                                title="Envoyer facture par WhatsApp"
+                              >
+                                <MessageCircle className="w-3 h-3" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -621,6 +715,49 @@ export function Billing() {
           />
         )}
       </Modal>
+
+      {/* PDF invoice share prompt */}
+      {invoiceCharge && (
+        <Modal open={!!invoiceCharge} title="📄 Facture téléchargée" onClose={() => setInvoiceCharge(null)} size="sm">
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600">
+              La facture de <strong>{invoiceCharge.customers?.last_name} {invoiceCharge.customers?.first_name}</strong> a été téléchargée.
+            </p>
+            {(invoiceCharge.customers as any)?.phone ? (
+              <a
+                href={(() => {
+                const p = ((invoiceCharge.customers as any)?.phone ?? '').replace(/\D/g, '')
+                const num = p.startsWith('224') ? p : `224${p}`
+                const msg = [
+                  `WastePilot Conakry`,
+                  `FACTURE N WP-${invoiceCharge.billing_period.replace('-','')}-${invoiceCharge.id.slice(-6).toUpperCase()}`,
+                  ``,
+                  `Client: ${invoiceCharge.customers?.last_name} ${invoiceCharge.customers?.first_name}`,
+                  `Periode: ${formatBillingPeriod(invoiceCharge.billing_period)}`,
+                  `Montant du: ${formatMoney(invoiceCharge.amount_due)} FG`,
+                  ...(invoiceCharge.amount_paid > 0 ? [`Deja regle: ${formatMoney(invoiceCharge.amount_paid)} FG`] : []),
+                  `Solde a payer: ${formatMoney(invoiceCharge.balance)} FG`,
+                  ``,
+                  `La facture PDF est disponible sur demande.`,
+                  `Merci de regulariser votre situation. — WastePilot Conakry`,
+                ].join('\n')
+                return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
+              })()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-semibold text-sm text-white transition-colors"
+                style={{ background: '#25D366' }}
+              >
+                <MessageCircle className="w-4 h-4" />
+                Envoyer via WhatsApp
+              </a>
+            ) : (
+              <p className="text-xs text-gray-400">Aucun numéro de téléphone enregistré pour ce client.</p>
+            )}
+            <button className="btn-secondary w-full" onClick={() => setInvoiceCharge(null)}>Fermer</button>
+          </div>
+        </Modal>
+      )}
 
       {/* Amélioration 4: overdue confirmation */}
       <ConfirmDialog

@@ -45,10 +45,9 @@ export function useCustomers(filters: Filters) {
         query = query.or(`first_name.ilike.${s},last_name.ilike.${s},phone.ilike.${s},subscriber_id.ilike.${s}`)
       }
 
-      const { data, error: err } = await query
+      const { data, error: err } = await query.range(0, 4999)
       if (err) throw err
 
-      // Fetch latest billing summary for each customer
       const customerIds = (data ?? []).map(c => c.id)
       if (customerIds.length === 0) {
         setCustomers([])
@@ -56,22 +55,27 @@ export function useCustomers(filters: Filters) {
         return
       }
 
-      const { data: charges } = await supabase
-        .from('billing_charges')
-        .select('customer_id, balance, status')
-        .in('customer_id', customerIds)
+      // Batch .in() queries to avoid URL-length limits (max 200 IDs per request)
+      const CHUNK = 200
+      const chargesArr: { customer_id: string; balance: number; status: string }[] = []
+      const subsArr: { customer_id: string; monthly_price: number; status: string }[] = []
+      const paymentsArr: { customer_id: string; payment_date: string }[] = []
 
-      const { data: subs } = await supabase
-        .from('subscriptions')
-        .select('customer_id, monthly_price, status')
-        .in('customer_id', customerIds)
-        .eq('status', 'active')
+      for (let i = 0; i < customerIds.length; i += CHUNK) {
+        const chunk = customerIds.slice(i, i + CHUNK)
+        const [c, s, p] = await Promise.all([
+          supabase.from('billing_charges').select('customer_id, balance, status').in('customer_id', chunk),
+          supabase.from('subscriptions').select('customer_id, monthly_price, status').in('customer_id', chunk).eq('status', 'active'),
+          supabase.from('payments').select('customer_id, payment_date').in('customer_id', chunk).order('payment_date', { ascending: false }),
+        ])
+        if (c.data) chargesArr.push(...(c.data as typeof chargesArr))
+        if (s.data) subsArr.push(...(s.data as typeof subsArr))
+        if (p.data) paymentsArr.push(...(p.data as typeof paymentsArr))
+      }
 
-      const { data: lastPayments } = await supabase
-        .from('payments')
-        .select('customer_id, payment_date')
-        .in('customer_id', customerIds)
-        .order('payment_date', { ascending: false })
+      const charges = chargesArr
+      const subs = subsArr
+      const lastPayments = paymentsArr
 
       const balanceMap = new Map<string, number>()
       const payStatusMap = new Map<string, string>()
@@ -104,14 +108,26 @@ export function useCustomers(filters: Filters) {
         monthly_price: subMap.get(c.id)?.monthly_price ?? null,
       }))
 
+      // Deduplicate: keep one per subscriber_id (if set), else per (last_name+first_name+phone)
+      // This handles the case where the same customer was imported multiple times
+      const dedupSeen = new Set<string>()
+      const deduped = rows.filter(r => {
+        const key = r.subscriber_id
+          ? `sub:${r.subscriber_id}`
+          : `name:${r.last_name?.toLowerCase()}|${r.first_name?.toLowerCase()}|${r.phone ?? ''}`
+        if (dedupSeen.has(key)) return false
+        dedupSeen.add(key)
+        return true
+      })
+
       // Filter by payment status client-side
       const filtered = filters.paymentStatus && filters.paymentStatus !== 'all'
-        ? rows.filter(r => {
+        ? deduped.filter(r => {
             if (filters.paymentStatus === 'paid') return r.current_balance === 0
             if (filters.paymentStatus === 'unpaid') return r.current_balance > 0
             return true
           })
-        : rows
+        : deduped
 
       setCustomers(filtered)
     } catch (e) {

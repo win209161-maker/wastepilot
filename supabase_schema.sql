@@ -1,34 +1,89 @@
--- WastePilot Database Schema
--- Run this in Supabase SQL Editor
+-- WastePilot Database Schema — Multi-Tenant
+-- Run this in Supabase SQL Editor (fresh deployment)
+-- For existing deployments, run supabase_multi_tenant_migration.sql instead
 
--- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================
+-- ORGANIZATIONS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS organizations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  created_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
+-- ORG MEMBERS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS org_members (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (org_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_org_members_user_id ON org_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_org_id ON org_members(org_id);
+
+-- ============================================================
+-- HELPER: current user's org IDs
+-- ============================================================
+CREATE OR REPLACE FUNCTION current_user_orgs()
+RETURNS SETOF UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT org_id FROM org_members WHERE user_id = auth.uid()
+$$;
+
+-- ============================================================
+-- CREATE ORG (atomic: org + owner membership + default sectors)
+-- ============================================================
+CREATE OR REPLACE FUNCTION create_org(p_name TEXT, p_slug TEXT)
+RETURNS UUID LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_id UUID;
+BEGIN
+  INSERT INTO organizations (name, slug, created_by)
+  VALUES (p_name, p_slug, auth.uid())
+  RETURNING id INTO v_id;
+
+  INSERT INTO org_members (org_id, user_id, role)
+  VALUES (v_id, auth.uid(), 'owner');
+
+  INSERT INTO sectors (org_id, name, code, description) VALUES
+    (v_id, 'Alpha Yaya',  'AY',  'Quartier Alpha Yaya'),
+    (v_id, 'Koloma 1 Est','K1E', 'Koloma 1 Est'),
+    (v_id, 'Koloma 2',    'K2',  'Koloma 2');
+
+  RETURN v_id;
+END;
+$$;
 
 -- ============================================================
 -- SECTORS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS sectors (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  code TEXT NOT NULL UNIQUE,
+  code TEXT NOT NULL,
   description TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (org_id, code)
 );
 
--- Seed sectors from existing data
-INSERT INTO sectors (name, code, description) VALUES
-  ('Alpha Yaya', 'AY', 'Quartier Alpha Yaya'),
-  ('Koloma 1 Est', 'K1E', 'Koloma 1 Est / K1 E'),
-  ('Koloma 2', 'K2', 'Koloma 2')
-ON CONFLICT (code) DO NOTHING;
+CREATE INDEX IF NOT EXISTS idx_sectors_org_id ON sectors(org_id);
 
 -- ============================================================
 -- CUSTOMERS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  subscriber_id TEXT UNIQUE,
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  subscriber_id TEXT,
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   phone TEXT,
@@ -46,9 +101,14 @@ CREATE TABLE IF NOT EXISTS customers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Unique subscriber_id per org (NULLs are allowed to repeat)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_org_subscriber
+  ON customers (org_id, subscriber_id)
+  WHERE subscriber_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_customers_org_id ON customers(org_id);
 CREATE INDEX IF NOT EXISTS idx_customers_status ON customers(status);
 CREATE INDEX IF NOT EXISTS idx_customers_sector_id ON customers(sector_id);
-CREATE INDEX IF NOT EXISTS idx_customers_subscriber_id ON customers(subscriber_id);
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 
 -- ============================================================
@@ -56,6 +116,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 -- ============================================================
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   monthly_price INTEGER NOT NULL CHECK (monthly_price > 0),
   start_date DATE NOT NULL,
@@ -68,15 +129,16 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_subscriptions_org_id ON subscriptions(org_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_customer_id ON subscriptions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 
 -- ============================================================
 -- BILLING CHARGES
--- billing_period format: 'YYYY-MM' (e.g. '2026-01')
 -- ============================================================
 CREATE TABLE IF NOT EXISTS billing_charges (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
   billing_period TEXT NOT NULL CHECK (billing_period ~ '^\d{4}-\d{2}$'),
@@ -94,6 +156,7 @@ CREATE TABLE IF NOT EXISTS billing_charges (
   CONSTRAINT valid_payment CHECK (amount_paid <= amount_due)
 );
 
+CREATE INDEX IF NOT EXISTS idx_billing_charges_org_id ON billing_charges(org_id);
 CREATE INDEX IF NOT EXISTS idx_billing_charges_customer_id ON billing_charges(customer_id);
 CREATE INDEX IF NOT EXISTS idx_billing_charges_subscription_id ON billing_charges(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_billing_charges_billing_period ON billing_charges(billing_period);
@@ -104,6 +167,7 @@ CREATE INDEX IF NOT EXISTS idx_billing_charges_status ON billing_charges(status)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   amount INTEGER NOT NULL CHECK (amount > 0),
   payment_method TEXT NOT NULL DEFAULT 'cash' CHECK (payment_method IN ('cash', 'bank_transfer', 'mobile_money', 'other')),
@@ -114,12 +178,12 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_payments_org_id ON payments(org_id);
 CREATE INDEX IF NOT EXISTS idx_payments_customer_id ON payments(customer_id);
 CREATE INDEX IF NOT EXISTS idx_payments_payment_date ON payments(payment_date);
 
 -- ============================================================
 -- PAYMENT ALLOCATIONS
--- Maps payments to specific billing charges
 -- ============================================================
 CREATE TABLE IF NOT EXISTS payment_allocations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -138,6 +202,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_allocations_charge_id ON payment_allocati
 -- ============================================================
 CREATE TABLE IF NOT EXISTS collection_schedules (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
   scheduled_date DATE NOT NULL,
@@ -149,6 +214,7 @@ CREATE TABLE IF NOT EXISTS collection_schedules (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_collection_schedules_org_id ON collection_schedules(org_id);
 CREATE INDEX IF NOT EXISTS idx_collection_schedules_customer_id ON collection_schedules(customer_id);
 CREATE INDEX IF NOT EXISTS idx_collection_schedules_scheduled_date ON collection_schedules(scheduled_date);
 CREATE INDEX IF NOT EXISTS idx_collection_schedules_status ON collection_schedules(status);
@@ -206,8 +272,10 @@ CREATE TRIGGER billing_charge_status_trigger
   FOR EACH ROW EXECUTE FUNCTION update_charge_status();
 
 -- ============================================================
--- ROW LEVEL SECURITY (enable when auth is configured)
+-- ROW LEVEL SECURITY
 -- ============================================================
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE org_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sectors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
@@ -216,110 +284,47 @@ ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_allocations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE collection_schedules ENABLE ROW LEVEL SECURITY;
 
--- Temporary: allow all authenticated users full access
--- Replace with role-based policies after auth is set up
-CREATE POLICY "Allow all for authenticated" ON sectors FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated" ON customers FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated" ON subscriptions FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated" ON billing_charges FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated" ON payments FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated" ON payment_allocations FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated" ON collection_schedules FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- organizations: members can read; owners can update
+CREATE POLICY "org_read" ON organizations FOR SELECT TO authenticated
+  USING (id IN (SELECT current_user_orgs()));
+CREATE POLICY "org_update" ON organizations FOR UPDATE TO authenticated
+  USING (id IN (SELECT org_id FROM org_members WHERE user_id = auth.uid() AND role = 'owner'))
+  WITH CHECK (id IN (SELECT org_id FROM org_members WHERE user_id = auth.uid() AND role = 'owner'));
 
--- ============================================================
--- SEED DATA (realistic test data based on actual Excel)
--- ============================================================
-DO $$
-DECLARE
-  ay_id UUID;
-  k1e_id UUID;
-  k2_id UUID;
-  c1_id UUID; c2_id UUID; c3_id UUID; c4_id UUID; c5_id UUID;
-  c6_id UUID; c7_id UUID; c8_id UUID;
-  s1_id UUID; s2_id UUID; s3_id UUID; s4_id UUID; s5_id UUID;
-  s6_id UUID; s7_id UUID; s8_id UUID;
-BEGIN
-  SELECT id INTO ay_id FROM sectors WHERE code = 'AY';
-  SELECT id INTO k1e_id FROM sectors WHERE code = 'K1E';
-  SELECT id INTO k2_id FROM sectors WHERE code = 'K2';
+-- org_members: members can read their own orgs' member list
+CREATE POLICY "member_read" ON org_members FOR SELECT TO authenticated
+  USING (org_id IN (SELECT current_user_orgs()));
 
-  -- Customers
-  INSERT INTO customers (id, subscriber_id, first_name, last_name, phone, neighborhood, sector_id, concession, reference, request_date, status)
-  VALUES
-    (uuid_generate_v4(), 'FC25/AY/09/0001', 'Abdel Aziz', 'DIALLO', '624826118', 'AY', ay_id, 'Garage Diafodeya', 'rue 1er arrêt', '2025-09-13', 'active'),
-    (uuid_generate_v4(), 'FC25/AY/09/0002', 'Amadou Djouldé', 'BALDE', '611011166', 'AY', ay_id, 'Diafodeya Garage', 'rue 1er arrêt', '2025-09-10', 'active'),
-    (uuid_generate_v4(), 'FC25/AY/01/0042', 'Oumou Sabana', 'BALDE', '624710107', 'AY', ay_id, 'Fatoumata Diaraye', 'rue 1er arrêt', '2025-01-29', 'active'),
-    (uuid_generate_v4(), 'FC25/AY/03/0065', 'Fatoumata Binta', 'BARRY', '621396227', 'AY', ay_id, 'Benak', 'rue 1er arrêt', '2025-03-04', 'active'),
-    (uuid_generate_v4(), 'FC25/AY/12/0001', 'Fatoumata', 'CAMARA', '622335092', 'AY', ay_id, 'Gaucher ya', 'route nationale', '2025-12-28', 'active'),
-    (uuid_generate_v4(), NULL, 'Mabéty', 'BANGOURA', '620891918', 'K1 E', k1e_id, 'Bangoura Mory Fodé', '6ème', '2025-06-23', 'active'),
-    (uuid_generate_v4(), NULL, 'Fanta', 'CAMARA', '621900316', 'K1 E', k1e_id, 'N''Faly Cité 6ème', '6ème', '2025-09-12', 'active'),
-    (uuid_generate_v4(), NULL, 'Ousmane', 'CAMARA', '629125041', 'K1 E', k1e_id, NULL, '6ème', '2025-10-20', 'suspended')
-  RETURNING id INTO c1_id;
+-- All data tables: full access for org members
+CREATE POLICY "org_access" ON sectors FOR ALL TO authenticated
+  USING (org_id IN (SELECT current_user_orgs()))
+  WITH CHECK (org_id IN (SELECT current_user_orgs()));
 
-  -- We need individual IDs, so let's re-select them
-  SELECT id INTO c1_id FROM customers WHERE subscriber_id = 'FC25/AY/09/0001';
-  SELECT id INTO c2_id FROM customers WHERE subscriber_id = 'FC25/AY/09/0002';
-  SELECT id INTO c3_id FROM customers WHERE subscriber_id = 'FC25/AY/01/0042';
-  SELECT id INTO c4_id FROM customers WHERE subscriber_id = 'FC25/AY/03/0065';
-  SELECT id INTO c5_id FROM customers WHERE subscriber_id = 'FC25/AY/12/0001';
-  SELECT id INTO c6_id FROM customers WHERE phone = '620891918';
-  SELECT id INTO c7_id FROM customers WHERE phone = '621900316';
-  SELECT id INTO c8_id FROM customers WHERE phone = '629125041';
+CREATE POLICY "org_access" ON customers FOR ALL TO authenticated
+  USING (org_id IN (SELECT current_user_orgs()))
+  WITH CHECK (org_id IN (SELECT current_user_orgs()));
 
-  -- Subscriptions
-  INSERT INTO subscriptions (id, customer_id, monthly_price, start_date, status)
-  VALUES
-    (uuid_generate_v4(), c1_id, 20000, '2025-09-01', 'active'),
-    (uuid_generate_v4(), c2_id, 20000, '2025-09-01', 'active'),
-    (uuid_generate_v4(), c3_id, 20000, '2025-01-01', 'active'),
-    (uuid_generate_v4(), c4_id, 20000, '2025-03-01', 'active'),
-    (uuid_generate_v4(), c5_id, 25000, '2025-12-01', 'active'),
-    (uuid_generate_v4(), c6_id, 20000, '2025-06-01', 'active'),
-    (uuid_generate_v4(), c7_id, 20000, '2025-09-01', 'active'),
-    (uuid_generate_v4(), c8_id, 20000, '2025-10-01', 'suspended')
-  RETURNING id INTO s1_id;
+CREATE POLICY "org_access" ON subscriptions FOR ALL TO authenticated
+  USING (org_id IN (SELECT current_user_orgs()))
+  WITH CHECK (org_id IN (SELECT current_user_orgs()));
 
-  SELECT id INTO s1_id FROM subscriptions WHERE customer_id = c1_id;
-  SELECT id INTO s2_id FROM subscriptions WHERE customer_id = c2_id;
-  SELECT id INTO s3_id FROM subscriptions WHERE customer_id = c3_id;
-  SELECT id INTO s4_id FROM subscriptions WHERE customer_id = c4_id;
-  SELECT id INTO s5_id FROM subscriptions WHERE customer_id = c5_id;
-  SELECT id INTO s6_id FROM subscriptions WHERE customer_id = c6_id;
-  SELECT id INTO s7_id FROM subscriptions WHERE customer_id = c7_id;
-  SELECT id INTO s8_id FROM subscriptions WHERE customer_id = c8_id;
+CREATE POLICY "org_access" ON billing_charges FOR ALL TO authenticated
+  USING (org_id IN (SELECT current_user_orgs()))
+  WITH CHECK (org_id IN (SELECT current_user_orgs()));
 
-  -- Billing charges for 2026-01 (January)
-  INSERT INTO billing_charges (customer_id, subscription_id, billing_period, monthly_price, months_billed, amount_due, amount_paid)
-  VALUES
-    (c1_id, s1_id, '2026-01', 20000, 1, 20000, 20000),
-    (c2_id, s2_id, '2026-01', 20000, 2, 40000, 0),
-    (c3_id, s3_id, '2026-01', 20000, 1, 20000, 20000),
-    (c4_id, s4_id, '2026-01', 20000, 1, 20000, 20000),
-    (c5_id, s5_id, '2026-01', 25000, 1, 25000, 25000),
-    (c6_id, s6_id, '2026-01', 20000, 1, 20000, 20000),
-    (c7_id, s7_id, '2026-01', 20000, 1, 20000, 20000),
-    (c8_id, s8_id, '2026-01', 20000, 1, 20000, 0);
+CREATE POLICY "org_access" ON payments FOR ALL TO authenticated
+  USING (org_id IN (SELECT current_user_orgs()))
+  WITH CHECK (org_id IN (SELECT current_user_orgs()));
 
-  -- Billing charges for 2026-02 (February)
-  INSERT INTO billing_charges (customer_id, subscription_id, billing_period, monthly_price, months_billed, amount_due, amount_paid)
-  VALUES
-    (c1_id, s1_id, '2026-02', 20000, 1, 20000, 20000),
-    (c2_id, s2_id, '2026-02', 20000, 1, 20000, 0),
-    (c3_id, s3_id, '2026-02', 20000, 1, 20000, 0),
-    (c4_id, s4_id, '2026-02', 20000, 1, 20000, 20000),
-    (c5_id, s5_id, '2026-02', 25000, 1, 25000, 0),
-    (c6_id, s6_id, '2026-02', 20000, 1, 20000, 20000),
-    (c7_id, s7_id, '2026-02', 20000, 1, 20000, 10000);
+-- payment_allocations: no direct org_id; access via payment ownership
+CREATE POLICY "org_access" ON payment_allocations FOR ALL TO authenticated
+  USING (payment_id IN (
+    SELECT id FROM payments WHERE org_id IN (SELECT current_user_orgs())
+  ))
+  WITH CHECK (payment_id IN (
+    SELECT id FROM payments WHERE org_id IN (SELECT current_user_orgs())
+  ));
 
-  -- Billing charges for 2026-09 (current month)
-  INSERT INTO billing_charges (customer_id, subscription_id, billing_period, monthly_price, months_billed, amount_due, amount_paid)
-  VALUES
-    (c1_id, s1_id, '2026-09', 25000, 1, 25000, 0),
-    (c2_id, s2_id, '2026-09', 25000, 1, 25000, 0),
-    (c3_id, s3_id, '2026-09', 25000, 1, 25000, 25000),
-    (c4_id, s4_id, '2026-09', 25000, 1, 25000, 0),
-    (c5_id, s5_id, '2026-09', 25000, 4, 100000, 0),
-    (c6_id, s6_id, '2026-09', 25000, 3, 75000, 0),
-    (c7_id, s7_id, '2026-09', 25000, 1, 25000, 25000);
-
-END $$;
+CREATE POLICY "org_access" ON collection_schedules FOR ALL TO authenticated
+  USING (org_id IN (SELECT current_user_orgs()))
+  WITH CHECK (org_id IN (SELECT current_user_orgs()));

@@ -263,99 +263,142 @@ export function generateReceipt(data: ReceiptData): jsPDF {
 
   drawHeader(doc, W)
 
-  // Receipt title
+  // Title — same size and position as "FACTURE"
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
+  doc.setFontSize(16)
   doc.setTextColor(DARK)
-  doc.text('RECU DE PAIEMENT', 14, 40)
+  doc.text('RECU DE PAIEMENT', 14, 41)
 
+  // N° + date stacked on left (same as invoice N° + Emis le)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(GRAY)
   const receiptNum = `WP-R-${data.paymentId.slice(-8).toUpperCase()}`
-  doc.text(`N ${receiptNum}`, 14, 47)
-  doc.text(pdfDate(data.paymentDate), W - 14, 47, { align: 'right' })
+  doc.text(`N ${receiptNum}`, 14, 49)
+  doc.text(`Date: ${pdfDate(data.paymentDate)}`, 14, 56)
 
-  drawDivider(doc, 52, W)
+  // "CONFIRME" green badge — right side, same as invoice status badge
+  const badgeW = 36
+  doc.setFillColor(BRAND)
+  doc.roundedRect(W - 14 - badgeW, 36, badgeW, 10, 3, 3, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  doc.setTextColor(255, 255, 255)
+  doc.text('CONFIRME', W - 14 - badgeW / 2, 42.6, { align: 'center' })
+  doc.setTextColor(DARK)
 
-  // Client info
+  drawDivider(doc, 61, W)
+
+  // ── Two-column cards (same layout as invoice CLIENT | PERIODE) ──
+  const boxTop = 65
+  const boxH = 36
+  const halfW = (W - 28) / 2 - 4
+
+  // LEFT: CLIENT
   doc.setFillColor(BRAND_LIGHT)
-  doc.roundedRect(14, 56, W - 28, 28, 3, 3, 'F')
+  doc.roundedRect(14, boxTop, halfW, boxH, 3, 3, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setTextColor(BRAND)
-  doc.text('RECU DE', 18, 63)
+  doc.text('CLIENT', 18, boxTop + 7)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
+  doc.setFontSize(9.5)
   doc.setTextColor(DARK)
-  doc.text(data.customerName, 18, 71)
+  doc.text(data.customerName, 18, boxTop + 14)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(GRAY)
-  const subInfo = [data.subscriberId ? `N ${data.subscriberId}` : null, data.phone ? `Tel: ${data.phone}` : null].filter(Boolean).join('   -   ')
-  if (subInfo) doc.text(subInfo, 18, 78)
+  if (data.subscriberId) doc.text(`N ${data.subscriberId}`, 18, boxTop + 21)
+  if (data.phone) doc.text(`Tel: ${data.phone}`, 18, boxTop + (data.subscriberId ? 27 : 21))
 
-  let y = 94
-
-  // Amount box
-  doc.setFillColor('#f0fdf4')
-  doc.roundedRect(14, y, W - 28, 20, 3, 3, 'F')
+  // RIGHT: PAIEMENT (method + date + ref)
+  const bx = 14 + halfW + 8
+  const bw = halfW
+  doc.setFillColor(BRAND_LIGHT)
+  doc.roundedRect(bx, boxTop, bw, boxH, 3, 3, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
+  doc.setFontSize(7.5)
   doc.setTextColor(BRAND)
-  doc.text('MONTANT RECU', 20, y + 8)
-  doc.setFontSize(18)
-  doc.text(pdfMoney(data.amount), W - 20, y + 12, { align: 'right' })
+  doc.text('MODE DE PAIEMENT', bx + 4, boxTop + 7)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9.5)
+  doc.setTextColor(DARK)
+  doc.text(METHOD_FR[data.paymentMethod] ?? data.paymentMethod, bx + 4, boxTop + 14)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(GRAY)
+  doc.text(pdfDate(data.paymentDate), bx + 4, boxTop + 21)
+  if (data.reference) doc.text(`Ref: ${data.reference}`, bx + 4, boxTop + 27)
 
-  y += 28
+  drawDivider(doc, boxTop + boxH + 6, W)
 
-  // Details table
-  drawDivider(doc, y, W)
-  y += 8
+  // ── Line items: periods covered (same table structure as invoice) ──
+  const liTop = boxTop + boxH + 14
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7.5)
+  doc.setTextColor(GRAY)
+  doc.text('DESIGNATION', 14, liTop)
+  doc.text('MONTANT', W - 14, liTop, { align: 'right' })
+  drawDivider(doc, liTop + 3, W)
 
-  const details = [
-    ['Date de paiement', pdfDate(data.paymentDate)],
-    ['Mode de paiement', METHOD_FR[data.paymentMethod] ?? data.paymentMethod],
-    ...(data.reference ? [['Reference', data.reference]] : []),
-    ...(data.periods.length > 0 ? [['Periode(s) couverte(s)', data.periods.map(pdfBillingPeriod).join(', ')]] : []),
-  ]
+  let y = liTop + 11
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
 
-  for (const [label, value] of details) {
-    row(doc, label, value, y, W)
+  if (data.periods.length === 0) {
+    doc.setTextColor(DARK)
+    doc.text('Paiement - service de collecte des dechets', 14, y)
+    doc.setTextColor(DARK)
+    doc.text(pdfMoney(data.amount), W - 14, y, { align: 'right' })
     y += 8
+  } else {
+    for (const period of data.periods) {
+      doc.setTextColor(DARK)
+      doc.text(`Service de collecte - ${pdfBillingPeriod(period)}`, 14, y)
+      doc.setTextColor(GRAY)
+      doc.text('-', W - 14, y, { align: 'right' })
+      y += 7
+    }
+    y += 1
   }
 
   drawDivider(doc, y, W)
-  y += 12
+  y += 8
 
-  // Confirmation stamp — green rounded rect + circle checkmark (no unicode)
-  const stampW = 72
-  const stampX = W / 2 - stampW / 2
-  doc.setFillColor(BRAND)
-  doc.roundedRect(stampX, y, stampW, 16, 3, 3, 'F')
-
-  // Draw circle checkmark using lines (ASCII-safe alternative to ✓)
-  const cx = stampX + 9
-  const cy = y + 8
-  const r = 4
-  doc.setDrawColor(255, 255, 255)
-  doc.setLineWidth(0.6)
-  doc.circle(cx, cy, r, 'S')
-  doc.setLineWidth(1.2)
-  doc.line(cx - 1.8, cy, cx - 0.3, cy + 1.8)
-  doc.line(cx - 0.3, cy + 1.8, cx + 2.2, cy - 1.8)
-
+  // ── MONTANT RECU box — mirrors SOLDE A PAYER ──
+  doc.setFillColor('#f0fdf4')
+  doc.roundedRect(14, y, W - 28, 16, 3, 3, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
-  doc.setTextColor(255, 255, 255)
-  doc.text('PAIEMENT CONFIRME', W / 2 + 3, y + 10, { align: 'center' })
+  doc.setTextColor(BRAND)
+  doc.text('MONTANT RECU', 20, y + 10)
+  doc.setFontSize(14)
+  doc.text(pdfMoney(data.amount), W - 20, y + 10, { align: 'right' })
 
-  y += 24
+  y += 22
+
+  // ── Confirmation note box — mirrors invoice payment note ──
+  doc.setFillColor(BRAND_LIGHT)
+  doc.roundedRect(14, y, W - 28, 26, 3, 3, 'F')
+
+  // Drawn checkmark circle (no unicode)
+  const ck = { x: 22, y: y + 13 }
+  doc.setFillColor(BRAND)
+  doc.circle(ck.x, ck.y, 4.5, 'F')
+  doc.setDrawColor(255, 255, 255)
+  doc.setLineWidth(1.2)
+  doc.line(ck.x - 2, ck.y, ck.x - 0.3, ck.y + 2)
+  doc.line(ck.x - 0.3, ck.y + 2, ck.x + 2.5, ck.y - 2)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.setTextColor(BRAND)
+  doc.text('PAIEMENT CONFIRME', 30, y + 9)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8.5)
+  doc.setFontSize(8)
   doc.setTextColor(GRAY)
-  doc.text('Merci pour votre paiement. Ce document certifie la reception du montant indique.', W / 2, y, { align: 'center' })
-  doc.text('Conservez ce recu comme preuve de paiement.', W / 2, y + 6, { align: 'center' })
+  doc.text('Ce document certifie la reception du montant indique.', 30, y + 16)
+  doc.text('Conservez ce recu comme preuve de paiement.', 30, y + 22)
 
   drawFooter(doc, W, H)
 
@@ -370,4 +413,38 @@ export function openPdfInNewTab(doc: jsPDF) {
   const blob = doc.output('blob')
   const url = URL.createObjectURL(blob)
   window.open(url, '_blank')
+}
+
+// Attach PDF to WhatsApp on mobile (Web Share API), fall back to download + text link on desktop
+export async function shareOnWhatsApp(
+  doc: jsPDF,
+  filename: string,
+  options: { phone?: string | null; text?: string } = {}
+): Promise<void> {
+  const blob = doc.output('blob')
+  const file = new File([blob], filename, { type: 'application/pdf' })
+
+  if (
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function' &&
+    navigator.canShare?.({ files: [file] })
+  ) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: filename.replace('.pdf', '').replace(/-/g, ' '),
+        text: options.text ?? '',
+      })
+      return
+    } catch {
+      // AbortError = user cancelled — fall through
+    }
+  }
+
+  // Desktop / unsupported: download PDF then open WhatsApp text
+  doc.save(filename)
+  const digits = (options.phone ?? '').replace(/\D/g, '')
+  if (digits && options.text) {
+    window.open(`https://wa.me/224${digits}?text=${encodeURIComponent(options.text)}`, '_blank')
+  }
 }

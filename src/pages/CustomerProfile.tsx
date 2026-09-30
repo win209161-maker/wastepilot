@@ -10,7 +10,7 @@ import { CustomerForm } from '../components/CustomerForm'
 import { useCustomerBilling } from '../hooks/useBilling'
 import { useSectors } from '../hooks/useCustomers'
 import { formatMoney, formatDate, formatBillingPeriod } from '../lib/utils'
-import { generateReceipt, downloadPdf, type ReceiptData } from '../lib/pdf'
+import { generateReceipt, downloadPdf, shareOnWhatsApp, type ReceiptData } from '../lib/pdf'
 import type { Customer, Sector, Subscription } from '../types/database'
 
 const METHOD_LABEL: Record<string, string> = {
@@ -96,16 +96,27 @@ export function CustomerProfile() {
     downloadPdf(doc, `Recu-WP-${p.payment_date}-${customer.last_name}.pdf`)
   }
 
-  function handleWhatsAppReceipt(p: any) {
-    if (!customer?.phone) return
-    const digits = customer.phone.replace(/\D/g, '')
-    const number = digits.startsWith('224') ? digits : `224${digits}`
+  async function handleWhatsAppReceipt(p: any) {
+    if (!customer) return
     const periods: string[] = (p.payment_allocations ?? [])
       .map((a: any) => a.billing_charges?.billing_period)
       .filter(Boolean)
-    const msg = [
+    const data: ReceiptData = {
+      paymentId: p.id,
+      customerName: `${customer.last_name} ${customer.first_name}`,
+      subscriberId: customer.subscriber_id ?? null,
+      phone: customer.phone ?? null,
+      amount: p.amount,
+      paymentDate: p.payment_date,
+      paymentMethod: p.payment_method,
+      reference: p.reference ?? null,
+      periods,
+    }
+    const doc = generateReceipt(data)
+    const filename = `Recu-WP-${p.payment_date}-${customer.last_name}.pdf`
+    const text = [
       `WastePilot Conakry`,
-      `RECU DE PAIEMENT`,
+      `RECU DE PAIEMENT N WP-R-${p.id.slice(-8).toUpperCase()}`,
       ``,
       `Client: ${customer.last_name} ${customer.first_name}`,
       `Montant recu: ${formatMoney(p.amount)} FG`,
@@ -114,9 +125,9 @@ export function CustomerProfile() {
       ...(p.reference ? [`Reference: ${p.reference}`] : []),
       ...(periods.length > 0 ? [`Periode(s): ${periods.map(formatBillingPeriod).join(', ')}`] : []),
       ``,
-      `Merci pour votre paiement. — WastePilot Conakry`,
+      `Merci pour votre paiement. - WastePilot Conakry`,
     ].join('\n')
-    window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank')
+    await shareOnWhatsApp(doc, filename, { phone: customer.phone, text })
   }
 
   if (loading) return <LoadingState />

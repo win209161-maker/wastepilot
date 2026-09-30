@@ -12,7 +12,7 @@ import { useBilling, type ChargeRow } from '../hooks/useBilling'
 import { formatMoney, formatBillingPeriod, currentBillingPeriod } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../context/OrgContext'
-import { generateInvoice, downloadPdf, type InvoiceData } from '../lib/pdf'
+import { generateInvoice, downloadPdf, shareOnWhatsApp, type InvoiceData } from '../lib/pdf'
 
 // ─── Add single charge form ────────────────────────────────────────────────────
 function AddChargeForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
@@ -505,14 +505,14 @@ export function Billing() {
     setInvoiceCharge(c)
   }
 
-  function handleWhatsAppInvoice(c: ChargeRow) {
+  async function handleWhatsAppInvoice(c: ChargeRow) {
     const data = buildInvoiceData(c)
-    const phone = data.phone?.replace(/\D/g, '') ?? ''
-    if (!phone) return
-    const number = phone.startsWith('224') ? phone : `224${phone}`
+    if (!data.phone) return
     const invoiceNum = `WP-${c.billing_period.replace('-', '')}-${c.id.slice(-6).toUpperCase()}`
     const statusLabel = c.status === 'paid' ? 'PAYE' : c.status === 'overdue' ? 'EN RETARD' : c.status === 'partial' ? 'PARTIEL' : 'IMPAYE'
-    const msg = [
+    const doc = generateInvoice(data)
+    const filename = `Facture-WP-${c.billing_period}-${data.customerName.replace(/ /g, '_')}.pdf`
+    const text = [
       `WastePilot Conakry`,
       `FACTURE N ${invoiceNum}`,
       ``,
@@ -525,7 +525,7 @@ export function Billing() {
       ``,
       `Merci de regler votre solde pour maintenir votre service de collecte.`,
     ].join('\n')
-    window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank')
+    await shareOnWhatsApp(doc, filename, { phone: data.phone, text })
   }
 
   return (

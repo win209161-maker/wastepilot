@@ -477,6 +477,14 @@ export function Import() {
               Choisir le fichier
               <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
             </label>
+            <p className="text-xs text-gray-400 mt-5">
+              Données de test :{' '}
+              <a href="/test-data/test_abonnement.xlsx" download className="text-blue-500 hover:underline">XLSX (3 feuilles)</a>
+              {' · '}
+              <a href="/test-data/test_base_initiale.csv" download className="text-blue-500 hover:underline">CSV base</a>
+              {' · '}
+              <a href="/test-data/test_janvier_2026.csv" download className="text-blue-500 hover:underline">CSV facturation</a>
+            </p>
           </div>
         </div>
       )}

@@ -312,6 +312,7 @@ export function Collections() {
             setLoading(true)
             supabase.from('collection_schedules')
               .select(`*, customers (first_name, last_name, concession, reference, sectors (code))`)
+              .eq('org_id', org!.id)
               .eq('scheduled_date', dateFilter)
               .then(({ data }) => { setSchedules((data ?? []) as ScheduleRow[]); setLoading(false) })
           }}

@@ -727,33 +727,14 @@ export function Billing() {
               La facture de <strong>{invoiceCharge.customers?.last_name} {invoiceCharge.customers?.first_name}</strong> a été téléchargée.
             </p>
             {(invoiceCharge.customers as any)?.phone ? (
-              <a
-                href={(() => {
-                const p = ((invoiceCharge.customers as any)?.phone ?? '').replace(/\D/g, '')
-                const num = p.startsWith('224') ? p : `224${p}`
-                const msg = [
-                  `WastePilot Conakry`,
-                  `FACTURE N WP-${invoiceCharge.billing_period.replace('-','')}-${invoiceCharge.id.slice(-6).toUpperCase()}`,
-                  ``,
-                  `Client: ${invoiceCharge.customers?.last_name} ${invoiceCharge.customers?.first_name}`,
-                  `Periode: ${formatBillingPeriod(invoiceCharge.billing_period)}`,
-                  `Montant du: ${formatMoney(invoiceCharge.amount_due)} FG`,
-                  ...(invoiceCharge.amount_paid > 0 ? [`Deja regle: ${formatMoney(invoiceCharge.amount_paid)} FG`] : []),
-                  `Solde a payer: ${formatMoney(invoiceCharge.balance)} FG`,
-                  ``,
-                  `La facture PDF est disponible sur demande.`,
-                  `Merci de regulariser votre situation. — WastePilot Conakry`,
-                ].join('\n')
-                return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
-              })()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-semibold text-sm text-white transition-colors"
+              <button
+                onClick={() => { handleWhatsAppInvoice(invoiceCharge); setInvoiceCharge(null) }}
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-semibold text-sm text-white transition-colors hover:opacity-90"
                 style={{ background: '#25D366' }}
               >
                 <MessageCircle className="w-4 h-4" />
-                Envoyer via WhatsApp
-              </a>
+                Partager la facture PDF
+              </button>
             ) : (
               <p className="text-xs text-gray-400">Aucun numéro de téléphone enregistré pour ce client.</p>
             )}

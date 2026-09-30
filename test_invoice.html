@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WastePilot — Facture (Preview)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #f3f4f6; font-family: Helvetica, Arial, sans-serif; padding: 32px 16px; }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    background: #fff;
+    margin: 0 auto;
+    box-shadow: 0 4px 32px rgba(0,0,0,0.12);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header {
+    background: #1B6C42;
+    padding: 0 14mm;
+    height: 28mm;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .header-title { color: #fff; font-size: 18pt; font-weight: bold; }
+  .header-sub { color: #c8e6d7; font-size: 8pt; margin-top: 5px; }
+
+  .body { flex: 1; padding: 0 14mm; }
+
+  .title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-top: 13mm;
+    padding-bottom: 4mm;
+  }
+  .doc-title { font-size: 16pt; font-weight: bold; color: #111827; }
+  .doc-meta { margin-top: 6px; color: #6b7280; font-size: 8.5pt; line-height: 1.7; }
+
+  .badge-unpaid  { background: #d97706; color: #fff; font-size: 8pt; font-weight: bold; padding: 4px 10px; border-radius: 6px; }
+  .badge-paid    { background: #16a34a; color: #fff; font-size: 8pt; font-weight: bold; padding: 4px 10px; border-radius: 6px; }
+  .badge-overdue { background: #dc2626; color: #fff; font-size: 8pt; font-weight: bold; padding: 4px 10px; border-radius: 6px; }
+
+  .divider { border: none; border-top: 0.3px solid #e5e7eb; margin: 0; }
+
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+    margin: 5mm 0 5mm;
+  }
+  .card { background: #E9EFED; border-radius: 4px; padding: 5mm; }
+  .card-label { font-size: 7.5pt; font-weight: bold; color: #1B6C42; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+  .card-value { font-size: 9.5pt; font-weight: bold; color: #111827; margin-bottom: 3px; }
+  .card-sub { font-size: 8.5pt; color: #6b7280; line-height: 1.6; }
+
+  .line-items { margin-top: 2mm; }
+  .table-header-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5pt;
+    font-weight: bold;
+    color: #6b7280;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding-bottom: 3mm;
+  }
+  .line-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+    color: #111827;
+    padding: 3.5mm 0;
+    border-bottom: 0.3px solid #e5e7eb;
+  }
+  .line-sub { font-size: 8pt; color: #6b7280; margin-top: 2px; }
+
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+    padding: 3mm 0;
+  }
+  .summary-label { color: #6b7280; }
+  .summary-value { color: #111827; }
+
+  .total-box {
+    background: #fef2f2;
+    border-radius: 4px;
+    padding: 5mm 6mm;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 5mm 0;
+  }
+  .total-box.paid { background: #f0fdf4; }
+  .total-label { font-size: 10pt; font-weight: bold; color: #dc2626; }
+  .total-box.paid .total-label { color: #1B6C42; }
+  .total-amount { font-size: 14pt; font-weight: bold; color: #dc2626; }
+  .total-box.paid .total-amount { color: #1B6C42; }
+
+  .payment-box {
+    background: #E9EFED;
+    border-radius: 4px;
+    padding: 5mm 6mm;
+    margin-bottom: 6mm;
+  }
+  .payment-box-title { font-size: 8.5pt; font-weight: bold; color: #1B6C42; margin-bottom: 5px; }
+  .payment-box-text { font-size: 8pt; color: #6b7280; line-height: 1.8; }
+
+  .footer {
+    background: #E9EFED;
+    padding: 5mm 14mm;
+    text-align: center;
+    font-size: 7.5pt;
+    color: #6b7280;
+    line-height: 1.8;
+    flex-shrink: 0;
+    margin-top: auto;
+  }
+
+  @media (max-width: 240mm) { .page { width: 100%; } }
+  @media print { body { background: none; padding: 0; } .page { box-shadow: none; width: 210mm; } }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="header-title">WastePilot</div>
+      <div class="header-sub">Gestion des collectes de déchets · Conakry, Guinée</div>
+    </div>
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+    </svg>
+  </div>
+
+  <!-- Body -->
+  <div class="body">
+
+    <!-- Title + badge -->
+    <div class="title-row">
+      <div>
+        <div class="doc-title">FACTURE</div>
+        <div class="doc-meta">
+          N° WP-202609-A3F2B9<br>
+          Émis le 28/09/2026
+        </div>
+      </div>
+      <span class="badge-unpaid">IMPAYÉ</span>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Two-col cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-label">Client</div>
+        <div class="card-value">Bah Mamadou</div>
+        <div class="card-sub">
+          N° SUB-0042<br>
+          Secteur: KLA-03<br>
+          Tél: 628 00 00 00
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Période</div>
+        <div class="card-value">Septembre 2026</div>
+        <div class="card-sub">1 mois facturé(s)</div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Line items -->
+    <div class="line-items">
+      <div class="table-header-row">
+        <span>Désignation</span>
+        <span>Montant</span>
+      </div>
+      <hr class="divider">
+      <div class="line-row">
+        <div>
+          <div>Service de collecte des déchets - Septembre 2026</div>
+        </div>
+        <div>20 000 FG</div>
+      </div>
+    </div>
+
+    <!-- Summary rows -->
+    <div style="padding: 3mm 0;">
+      <div class="summary-row">
+        <span class="summary-label">Montant dû</span>
+        <span class="summary-value">20 000 FG</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Total box -->
+    <div class="total-box">
+      <span class="total-label">SOLDE À PAYER</span>
+      <span class="total-amount">20 000 FG</span>
+    </div>
+
+    <!-- Payment instructions -->
+    <div class="payment-box">
+      <div class="payment-box-title">Modalités de paiement</div>
+      <div class="payment-box-text">
+        Espèces · Mobile Money · Virement bancaire<br>
+        Merci de régler ce montant pour maintenir votre service de collecte.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    WastePilot · Conakry, Guinée · Gestion professionnelle des collectes<br>
+    Document généré le 28/09/2026
+  </div>
+
+</div>
+
+</body>
+</html>

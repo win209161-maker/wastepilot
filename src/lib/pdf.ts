@@ -415,7 +415,7 @@ export function openPdfInNewTab(doc: jsPDF) {
   window.open(url, '_blank')
 }
 
-// Attach PDF to WhatsApp on mobile (Web Share API), fall back to download + text link on desktop
+// Share PDF via Web Share API (attaches file on mobile), falls back to download + WhatsApp text link
 export async function shareOnWhatsApp(
   doc: jsPDF,
   filename: string,
@@ -437,14 +437,15 @@ export async function shareOnWhatsApp(
       })
       return
     } catch {
-      // AbortError = user cancelled — fall through
+      // AbortError = user cancelled — fall through to download
     }
   }
 
-  // Desktop / unsupported: download PDF then open WhatsApp text
+  // Desktop / unsupported: download PDF then open WhatsApp with pre-filled text
   doc.save(filename)
   const digits = (options.phone ?? '').replace(/\D/g, '')
   if (digits && options.text) {
-    window.open(`https://wa.me/224${digits}?text=${encodeURIComponent(options.text)}`, '_blank')
+    const num = digits.startsWith('224') ? digits : `224${digits}`
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(options.text)}`, '_blank')
   }
 }

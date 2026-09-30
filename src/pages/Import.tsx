@@ -281,24 +281,24 @@ export function Import() {
       return null
     }
 
-    // Base rows = unique customer list. Fall back to dedup if no base sheet.
+    // Base rows = unique customer list. Fall back to ALL billing rows if no base sheet.
     const baseRows = parsed.filter(r => !r.needs_review && r.row_type === 'base')
     let uniqueCustomers: ParsedCustomer[]
     if (baseRows.length > 0) {
       uniqueCustomers = baseRows
     } else {
+      // No base sheet: use ALL billing rows for client creation (needs_review only blocks billing charges)
       const customerMap = new Map<string, ParsedCustomer>()
-      for (const r of parsed) {
-        if (r.needs_review) continue
+      for (const r of parsed.filter(r => r.row_type === 'billing')) {
         const key = r.subscriber_id ?? clientKey(r)
         if (!customerMap.has(key)) customerMap.set(key, r)
       }
       uniqueCustomers = [...customerMap.values()]
     }
 
-    // Billing rows: sheets with extractable period + valid amount
+    // Billing rows: valid amount + extractable period (needs_review doesn't block valid amounts)
     const billingRows = parsed.filter(r =>
-      !r.needs_review && r.row_type === 'billing' && r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet)
+      r.row_type === 'billing' && r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet)
     )
 
     // Load existing customers
@@ -447,12 +447,13 @@ export function Import() {
     if (!parsed) return 0
     const baseRows = okItems.filter(r => r.row_type === 'base')
     if (baseRows.length > 0) return baseRows.length
+    // Billing-only: count ALL billing rows regardless of needs_review
     const seen = new Set<string>()
-    for (const r of okItems) seen.add(r.subscriber_id ?? clientKey(r))
+    for (const r of parsed.filter(r => r.row_type === 'billing')) seen.add(r.subscriber_id ?? clientKey(r))
     return seen.size
   })()
 
-  const billingRowCount = okItems.filter(r => r.row_type === 'billing' && r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet)).length
+  const billingRowCount = parsed?.filter(r => r.row_type === 'billing' && r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet)).length ?? 0
 
   return (
     <div>

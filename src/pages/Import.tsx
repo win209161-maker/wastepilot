@@ -174,7 +174,7 @@ export function Import() {
     let count = 0
 
     // Build sector map: code, name, AND numeric order (1=first alphabetically, etc.)
-    const { data: sectors } = await supabase.from('sectors').select('id, code, name').order('name')
+    const { data: sectors } = await supabase.from('sectors').select('id, code, name').eq('org_id', org!.id).order('name')
     const sectorMap = new Map<string, string>()
     for (let i = 0; i < (sectors ?? []).length; i++) {
       const s = (sectors as any[])[i]

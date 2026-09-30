@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import { currentBillingPeriod } from '../lib/utils'
 
 export interface DashboardStats {
@@ -32,7 +33,7 @@ export interface TopDebtor {
 }
 
 export interface DailyPayment {
-  day: string      // 'lun', 'mar', etc.
+  day: string
   amount: number
 }
 
@@ -44,6 +45,7 @@ export interface SectorStat {
 }
 
 export function useDashboard() {
+  const { org } = useOrg()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([])
   const [topDebtors, setTopDebtors] = useState<TopDebtor[]>([])
@@ -59,13 +61,14 @@ export function useDashboard() {
   const refresh = () => setRefreshKey(k => k + 1)
 
   useEffect(() => {
+    if (!org) return
     async function load() {
       setLoading(true)
       try {
-        // Use the most recent period with billing data, fallback to current month
         const latestRes = await supabase
           .from('billing_charges')
           .select('billing_period')
+          .eq('org_id', org!.id)
           .order('billing_period', { ascending: false })
           .limit(1)
           .maybeSingle()
@@ -75,27 +78,18 @@ export function useDashboard() {
         const today = new Date()
         const todayStr = today.toISOString().split('T')[0]
 
-        // Last 7 days for daily payments chart
         const sevenDaysAgo = new Date(today)
         sevenDaysAgo.setDate(today.getDate() - 6)
         const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0]
 
         const [customersRes, chargesCurrentRes, chargesHistoryRes, collectionsRes, paymentsWeekRes, sectorsRes] =
           await Promise.all([
-            supabase.from('customers').select('id, first_name, last_name, status, sector_id, subscriber_id, phone').range(0, 4999),
-            supabase.from('billing_charges')
-              .select('customer_id, amount_due, amount_paid, balance, status')
-              .eq('billing_period', period),
-            supabase.from('billing_charges')
-              .select('billing_period, amount_due, amount_paid')
-              .gte('billing_period', getPastPeriod(6))
-              .order('billing_period'),
-            supabase.from('collection_schedules').select('status').eq('scheduled_date', todayStr),
-            supabase.from('payments')
-              .select('amount, payment_date')
-              .gte('payment_date', sevenDaysAgoStr)
-              .order('payment_date'),
-            supabase.from('sectors').select('id, name, code').eq('active', true),
+            supabase.from('customers').select('id, first_name, last_name, status, sector_id, subscriber_id, phone').eq('org_id', org!.id).range(0, 4999),
+            supabase.from('billing_charges').select('customer_id, amount_due, amount_paid, balance, status').eq('org_id', org!.id).eq('billing_period', period),
+            supabase.from('billing_charges').select('billing_period, amount_due, amount_paid').eq('org_id', org!.id).gte('billing_period', getPastPeriod(6)).order('billing_period'),
+            supabase.from('collection_schedules').select('status').eq('org_id', org!.id).eq('scheduled_date', todayStr),
+            supabase.from('payments').select('amount, payment_date').eq('org_id', org!.id).gte('payment_date', sevenDaysAgoStr).order('payment_date'),
+            supabase.from('sectors').select('id, name, code').eq('org_id', org!.id).eq('active', true),
           ])
 
         if (customersRes.error) throw customersRes.error
@@ -137,7 +131,6 @@ export function useDashboard() {
           collectionsToday, collectionsCompleted, collectionsMissed,
         })
 
-        // Top debtors
         const customerMap = new Map(customers.map(c => [c.id, `${c.last_name} ${c.first_name}`]))
         const debtors: TopDebtor[] = charges
           .filter(c => (c.balance ?? (c.amount_due - c.amount_paid)) > 0)
@@ -150,7 +143,6 @@ export function useDashboard() {
           .slice(0, 5)
         setTopDebtors(debtors)
 
-        // Daily payments for last 7 days
         const dayLabels = ['fr', 'sa', 'di', 'lu', 'ma', 'me', 'je']
         const dayMap = new Map<string, number>()
         for (let i = 0; i < 7; i++) {
@@ -168,7 +160,6 @@ export function useDashboard() {
         }))
         setDailyPayments(daily)
 
-        // Sector stats
         const sectorCustomerMap = new Map<string, number>()
         const sectorUnpaidMap = new Map<string, number>()
         for (const c of customers.filter(c => c.status === 'active')) {
@@ -186,7 +177,6 @@ export function useDashboard() {
           unpaidAmount: sectorUnpaidMap.get(s.id) ?? 0,
         })))
 
-        // Monthly history
         const periodMap = new Map<string, { expected: number; collected: number }>()
         for (const h of history) {
           const ex = periodMap.get(h.billing_period) ?? { expected: 0, collected: 0 }
@@ -200,10 +190,11 @@ export function useDashboard() {
               expected: v.expected, collected: v.collected, outstanding: v.expected - v.collected,
             }))
         )
-        // Overdue alert: unpaid/partial from previous months
+
         const { data: overdueRows } = await supabase
           .from('billing_charges')
           .select('id', { count: 'exact', head: false })
+          .eq('org_id', org!.id)
           .in('status', ['unpaid', 'partial'])
           .lt('billing_period', period)
         setOverdueAlertCount(overdueRows?.length ?? 0)
@@ -215,7 +206,7 @@ export function useDashboard() {
       }
     }
     load()
-  }, [refreshKey])
+  }, [refreshKey, org?.id])
 
   return { stats, monthlyData, topDebtors, dailyPayments, sectorStats, loading, error, refresh, lastUpdated, overdueAlertCount, activePeriod }
 }

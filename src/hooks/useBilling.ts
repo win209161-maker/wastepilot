@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import type { BillingCharge, Customer, Sector } from '../types/database'
 
 export type ChargeRow = BillingCharge & {
@@ -9,19 +10,19 @@ export type ChargeRow = BillingCharge & {
 }
 
 export function useBilling(period: string, statusFilter: string) {
+  const { org } = useOrg()
   const [charges, setCharges] = useState<ChargeRow[]>([])
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState({ expected: 0, collected: 0, outstanding: 0 })
 
   const load = useCallback(async () => {
+    if (!org) return
     setLoading(true)
     try {
       let query = supabase
         .from('billing_charges')
-        .select(`
-          *,
-          customers (first_name, last_name, subscriber_id, sector_id, sectors (code))
-        `)
+        .select(`*, customers (first_name, last_name, subscriber_id, sector_id, sectors (code))`)
+        .eq('org_id', org.id)
         .eq('billing_period', period)
         .order('created_at', { ascending: false })
 
@@ -41,7 +42,7 @@ export function useBilling(period: string, statusFilter: string) {
     } finally {
       setLoading(false)
     }
-  }, [period, statusFilter])
+  }, [period, statusFilter, org?.id])
 
   useEffect(() => { load() }, [load])
 
@@ -49,19 +50,22 @@ export function useBilling(period: string, statusFilter: string) {
 }
 
 export function useCustomerBilling(customerId: string) {
+  const { org } = useOrg()
   const [charges, setCharges] = useState<BillingCharge[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!org) return
     supabase.from('billing_charges')
       .select('*')
+      .eq('org_id', org.id)
       .eq('customer_id', customerId)
       .order('billing_period', { ascending: false })
       .then(({ data }) => {
         setCharges(data ?? [])
         setLoading(false)
       })
-  }, [customerId])
+  }, [customerId, org?.id])
 
   return { charges, loading }
 }

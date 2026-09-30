@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Phone, MapPin, CreditCard, Pencil, Check, X, Download, MessageCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { LoadingState } from '../components/ui/LoadingState'
 import { Modal } from '../components/ui/Modal'
@@ -28,6 +29,7 @@ type FullCustomer = Customer & {
 export function CustomerProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { org } = useOrg()
   const [customer, setCustomer] = useState<FullCustomer | null>(null)
   const [loading, setLoading] = useState(true)
   const [showPayment, setShowPayment] = useState(false)
@@ -42,26 +44,29 @@ export function CustomerProfile() {
   const [paymentsLoading, setPaymentsLoading] = useState(true)
 
   function loadPayments() {
-    if (!id) return
+    if (!id || !org) return
     supabase.from('payments')
       .select('*, payment_allocations(billing_charges(billing_period))')
+      .eq('org_id', org.id)
       .eq('customer_id', id)
       .order('payment_date', { ascending: false })
       .then(({ data }) => { setPayments(data ?? []); setPaymentsLoading(false) })
   }
 
   function reloadCustomer() {
-    if (!id) return
+    if (!id || !org) return
     supabase.from('customers').select('*, sectors (*), subscriptions (*)')
+      .eq('org_id', org.id)
       .eq('id', id).single()
       .then(({ data }) => setCustomer(data as unknown as FullCustomer))
   }
 
   useEffect(() => {
-    if (!id) return
+    if (!id || !org) return
     supabase
       .from('customers')
       .select('*, sectors (*), subscriptions (*)')
+      .eq('org_id', org.id)
       .eq('id', id)
       .single()
       .then(({ data }) => {
@@ -69,7 +74,7 @@ export function CustomerProfile() {
         setLoading(false)
       })
     loadPayments()
-  }, [id])
+  }, [id, org?.id])
 
   const totalDue = charges.reduce((s, c) => s + c.amount_due, 0)
   const totalPaid = charges.reduce((s, c) => s + c.amount_paid, 0)

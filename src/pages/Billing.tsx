@@ -29,7 +29,7 @@ function AddChargeForm({ onSuccess, onCancel }: { onSuccess: () => void; onCance
 
   useEffect(() => {
     supabase.from('customers').select('id, last_name, first_name, subscriptions (id, monthly_price)')
-      .eq('status', 'active').order('last_name')
+      .eq('org_id', org!.id).eq('status', 'active').order('last_name')
       .then(({ data }) => setCustomers((data ?? []) as any))
   }, [])
 
@@ -130,10 +130,12 @@ function GenerateBillingModal({ period, onSuccess, onCancel }: {
       const [{ data: subs }, { data: existing }] = await Promise.all([
         supabase.from('subscriptions')
           .select('id, customer_id, monthly_price, customers!inner(first_name, last_name, status)')
+          .eq('org_id', org!.id)
           .eq('status', 'active')
           .eq('customers.status', 'active'),
         supabase.from('billing_charges')
           .select('customer_id')
+          .eq('org_id', org!.id)
           .eq('billing_period', targetPeriod),
       ])
 
@@ -278,6 +280,7 @@ interface UnpaidRow {
 }
 
 function WhatsAppModal({ period, onClose }: { period: string; onClose: () => void }) {
+  const { org } = useOrg()
   const [rows, setRows] = useState<UnpaidRow[]>([])
   const [loading, setLoading] = useState(true)
   const [msgTemplate, setMsgTemplate] = useState(
@@ -285,9 +288,11 @@ function WhatsAppModal({ period, onClose }: { period: string; onClose: () => voi
   )
 
   useEffect(() => {
+    if (!org) return
     supabase.from('billing_charges')
       .select(`amount_due, amount_paid, balance, status,
         customers (first_name, last_name, phone)`)
+      .eq('org_id', org.id)
       .eq('billing_period', period)
       .in('status', ['unpaid', 'partial', 'overdue'])
       .order('status')
@@ -301,7 +306,7 @@ function WhatsAppModal({ period, onClose }: { period: string; onClose: () => voi
         setRows(r)
         setLoading(false)
       })
-  }, [period])
+  }, [period, org?.id])
 
   function buildMessage(row: UnpaidRow) {
     return msgTemplate
@@ -408,16 +413,19 @@ function WhatsAppModal({ period, onClose }: { period: string; onClose: () => voi
 // ─── Main Billing page ─────────────────────────────────────────────────────────
 export function Billing() {
   const navigate = useNavigate()
+  const { org } = useOrg()
   const [period, setPeriod] = useState('')
 
   useEffect(() => {
+    if (!org) return
     supabase.from('billing_charges')
       .select('billing_period')
+      .eq('org_id', org.id)
       .order('billing_period', { ascending: false })
       .limit(1)
       .maybeSingle()
       .then(({ data }) => setPeriod(data?.billing_period ?? currentBillingPeriod()))
-  }, [])
+  }, [org?.id])
   const [statusFilter, setStatusFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [showGenerate, setShowGenerate] = useState(false)
@@ -445,15 +453,9 @@ export function Billing() {
   }
 
   async function checkOverdue() {
-    const { data } = await supabase
-      .from('billing_charges')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['unpaid', 'partial'])
-      .lt('billing_period', currentBillingPeriod())
-    setOverdueCount((data as any)?.length ?? 0)
-    // Use count from the response
     supabase.from('billing_charges')
       .select('id')
+      .eq('org_id', org!.id)
       .in('status', ['unpaid', 'partial'])
       .lt('billing_period', currentBillingPeriod())
       .then(({ data: rows }) => {
@@ -467,6 +469,7 @@ export function Billing() {
     const { data: rows } = await supabase
       .from('billing_charges')
       .select('id')
+      .eq('org_id', org!.id)
       .in('status', ['unpaid', 'partial'])
       .lt('billing_period', currentBillingPeriod())
     if (rows && rows.length > 0) {

@@ -8,6 +8,7 @@ import { Modal } from '../components/ui/Modal'
 import { PaymentForm } from '../components/PaymentForm'
 import { usePayments } from '../hooks/usePayments'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import { formatMoney, formatDate, currentBillingPeriod } from '../lib/utils'
 import type { BillingCharge } from '../types/database'
 
@@ -20,18 +21,20 @@ const METHOD_LABELS: Record<string, string> = {
 
 // ─── Stats bar ─────────────────────────────────────────────────────────────────
 function PaymentStats() {
+  const { org } = useOrg()
   const [todayTotal, setTodayTotal] = useState<number | null>(null)
   const [monthTotal, setMonthTotal] = useState<number | null>(null)
   const [monthCount, setMonthCount] = useState<number | null>(null)
 
   useEffect(() => {
+    if (!org) return
     const today = new Date().toISOString().split('T')[0]
     const period = currentBillingPeriod()
     const monthStart = `${period}-01`
 
     Promise.all([
-      supabase.from('payments').select('amount').eq('payment_date', today),
-      supabase.from('payments').select('amount').gte('payment_date', monthStart),
+      supabase.from('payments').select('amount').eq('org_id', org.id).eq('payment_date', today),
+      supabase.from('payments').select('amount').eq('org_id', org.id).gte('payment_date', monthStart),
     ]).then(([todayRes, monthRes]) => {
       const tTotal = (todayRes.data ?? []).reduce((s: number, p: any) => s + p.amount, 0)
       const mData = monthRes.data ?? []
@@ -40,7 +43,7 @@ function PaymentStats() {
       setMonthTotal(mTotal)
       setMonthCount(mData.length)
     })
-  }, [])
+  }, [org?.id])
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
@@ -70,6 +73,7 @@ function PaymentStats() {
 interface SearchResult { id: string; name: string; subscriber_id: string | null; sector: string | null }
 
 function NewPaymentModal({ onSuccess, onClose }: { onSuccess: () => void; onClose: () => void }) {
+  const { org } = useOrg()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -85,6 +89,7 @@ function NewPaymentModal({ onSuccess, onClose }: { onSuccess: () => void; onClos
       const { data } = await supabase
         .from('customers')
         .select('id, first_name, last_name, subscriber_id, sectors (code)')
+        .eq('org_id', org!.id)
         .or(`last_name.ilike.%${query}%,first_name.ilike.%${query}%,subscriber_id.ilike.%${query}%`)
         .eq('status', 'active')
         .limit(10)

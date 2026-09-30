@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import type { Payment, Customer } from '../types/database'
 
 export type PaymentRow = Payment & {
@@ -7,17 +8,20 @@ export type PaymentRow = Payment & {
 }
 
 export function usePayments(page = 0, pageSize = 20) {
+  const { org } = useOrg()
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!org) return
     const from = page * pageSize
     const to = from + pageSize - 1
 
     supabase
       .from('payments')
       .select(`*, customers (first_name, last_name, subscriber_id)`, { count: 'exact' })
+      .eq('org_id', org.id)
       .order('payment_date', { ascending: false })
       .range(from, to)
       .then(({ data, count }) => {
@@ -25,7 +29,7 @@ export function usePayments(page = 0, pageSize = 20) {
         setTotal(count ?? 0)
         setLoading(false)
       })
-  }, [page, pageSize])
+  }, [page, pageSize, org?.id])
 
   return { payments, total, loading }
 }
@@ -60,6 +64,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ error?
   const { data: charges, error: chargeErr } = await supabase
     .from('billing_charges')
     .select('*')
+    .eq('org_id', input.orgId)
     .eq('customer_id', input.customerId)
     .in('status', ['unpaid', 'partial', 'overdue'])
     .order('billing_period', { ascending: true })

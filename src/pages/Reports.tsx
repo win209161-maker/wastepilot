@@ -5,6 +5,7 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { LoadingState } from '../components/ui/LoadingState'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { supabase } from '../lib/supabase'
+import { useOrg } from '../context/OrgContext'
 import { formatMoney, formatBillingPeriod, formatDate } from '../lib/utils'
 
 interface SectorReport {
@@ -41,6 +42,7 @@ function periodShort(p: string): string {
 }
 
 export function Reports() {
+  const { org } = useOrg()
   const [period, setPeriod] = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -53,19 +55,24 @@ export function Reports() {
   const [totals, setTotals] = useState({ expected: 0, collected: 0, outstanding: 0 })
 
   useEffect(() => {
+    if (!org) return
     setLoading(true)
     Promise.all([
       supabase.from('billing_charges')
         .select('customer_id, amount_due, amount_paid, customers (sector_id, sectors (name, code))')
+        .eq('org_id', org.id)
         .eq('billing_period', period),
       supabase.from('billing_charges')
         .select('customer_id, billing_period, amount_due, amount_paid, status, customers (first_name, last_name, subscriber_id, sector_id, sectors (code))')
+        .eq('org_id', org.id)
         .in('status', ['unpaid', 'partial', 'overdue']),
       supabase.from('payments')
         .select('customer_id, payment_date')
+        .eq('org_id', org.id)
         .order('payment_date', { ascending: false }),
       supabase.from('billing_charges')
         .select('billing_period, amount_due, amount_paid')
+        .eq('org_id', org.id)
         .gte('billing_period', getPastPeriod(5))
         .order('billing_period'),
     ]).then(([chargesRes, unpaidRes, paymentsRes, trendRes]) => {
@@ -141,7 +148,7 @@ export function Reports() {
       setUnpaidList(Array.from(customerMap.values()).sort((a, b) => b.balance - a.balance))
       setLoading(false)
     })
-  }, [period])
+  }, [period, org?.id])
 
   function exportCSV() {
     const rows = unpaidList.map(c =>

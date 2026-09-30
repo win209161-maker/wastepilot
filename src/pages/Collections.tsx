@@ -23,20 +23,23 @@ function GenerateSchedulesModal({ onSuccess, onClose }: { onSuccess: () => void;
   const [done, setDone] = useState(0)
 
   useEffect(() => {
-    supabase.from('sectors').select('id, name, code').eq('active', true).order('name')
+    if (!org) return
+    supabase.from('sectors').select('id, name, code').eq('org_id', org.id).eq('active', true).order('name')
       .then(({ data }) => setSectors((data ?? []) as any))
-  }, [])
+  }, [org?.id])
 
   async function loadPreview() {
+    if (!org) return
     setLoading(true)
     let q = supabase.from('customers')
       .select('id, first_name, last_name, subscriptions!inner(id, status)')
+      .eq('org_id', org.id)
       .eq('status', 'active')
       .eq('subscriptions.status', 'active')
     if (sectorId !== 'all') q = q.eq('sector_id', sectorId)
     const [{ data: customers }, { data: existing }] = await Promise.all([
       q,
-      supabase.from('collection_schedules').select('customer_id').eq('scheduled_date', date),
+      supabase.from('collection_schedules').select('customer_id').eq('org_id', org.id).eq('scheduled_date', date),
     ])
     const existingIds = new Set((existing ?? []).map((e: any) => e.customer_id))
     const toCreate = ((customers ?? []) as any[])
@@ -135,6 +138,7 @@ type ScheduleRow = CollectionSchedule & {
 }
 
 export function Collections() {
+  const { org } = useOrg()
   const [schedules, setSchedules] = useState<ScheduleRow[]>([])
   const [loading, setLoading] = useState(true)
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0])
@@ -143,10 +147,12 @@ export function Collections() {
   const [showGenerate, setShowGenerate] = useState(false)
 
   useEffect(() => {
+    if (!org) return
     setLoading(true)
     let query = supabase
       .from('collection_schedules')
       .select(`*, customers (first_name, last_name, concession, reference, sectors (code))`)
+      .eq('org_id', org.id)
       .eq('scheduled_date', dateFilter)
       .order('created_at')
 
@@ -158,7 +164,7 @@ export function Collections() {
       setSchedules((data ?? []) as ScheduleRow[])
       setLoading(false)
     })
-  }, [dateFilter, statusFilter])
+  }, [dateFilter, statusFilter, org?.id])
 
   async function markStatus(id: string, status: 'completed' | 'missed') {
     setUpdating(id)

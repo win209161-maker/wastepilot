@@ -7,7 +7,12 @@ const GRAY = '#6b7280'
 const DARK = '#111827'
 
 function pdfMoney(amount: number): string {
-  return String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' FG'
+  const s = String(Math.round(amount))
+  const parts: string[] = []
+  for (let i = s.length; i > 0; i -= 3) {
+    parts.unshift(s.slice(Math.max(0, i - 3), i))
+  }
+  return parts.join(' ') + ' FG'
 }
 
 function drawHeader(doc: jsPDF, docWidth: number) {
@@ -109,9 +114,10 @@ function pdfBillingPeriod(period: string): string {
 
 function pdfDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  return `${d.getDate()} ${PDF_MONTHS[d.getMonth()].slice(0, 4)}. ${d.getFullYear()}`
+  const parts = dateStr.split('T')[0].split('-').map(Number)
+  if (parts.length < 3 || parts.some(isNaN)) return dateStr
+  const [yr, mo, day] = parts
+  return `${day} ${PDF_MONTHS[mo - 1].slice(0, 4)}. ${yr}`
 }
 
 export function generateInvoice(data: InvoiceData): jsPDF {
@@ -389,6 +395,8 @@ export function generateReceipt(data: ReceiptData): jsPDF {
   doc.setLineWidth(1.2)
   doc.line(ck.x - 2, ck.y, ck.x - 0.3, ck.y + 2)
   doc.line(ck.x - 0.3, ck.y + 2, ck.x + 2.5, ck.y - 2)
+  doc.setDrawColor('#e5e7eb')
+  doc.setLineWidth(0.3)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)

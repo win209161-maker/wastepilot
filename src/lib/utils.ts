@@ -40,16 +40,20 @@ export function parseMultiMonthValue(raw: string | number | null): {
 } | null {
   if (raw == null) return null
   const str = String(raw).trim()
-  const match = str.match(/^(\d+)x(\d+)$/i)
-  if (match) {
-    const months = parseInt(match[1])
-    const price = parseInt(match[2])
-    return { monthlyPrice: price, monthsBilled: months, totalAmount: months * price }
+  // Normalize: collapse whitespace, map × / ✕ → x, strip commas (thousands separator)
+  const normalized = str.replace(/\s+/g, '').replace(/[×✕]/g, 'x').replace(/,/g, '')
+  // Multi-month: NxM — handles "2x25000", "2X25000", "3x20000"
+  const multiMatch = normalized.match(/^(\d+)[xX](\d+)$/)
+  if (multiMatch) {
+    const months = parseInt(multiMatch[1])
+    const price = parseInt(multiMatch[2])
+    if (months > 0 && months <= 24 && price > 0)
+      return { monthlyPrice: price, monthsBilled: months, totalAmount: months * price }
   }
-  const num = parseFloat(str.replace(/\s/g, ''))
-  if (!isNaN(num)) {
+  // Plain number (thousands separators already stripped)
+  const num = parseFloat(normalized)
+  if (!isNaN(num) && num > 0)
     return { monthlyPrice: num, monthsBilled: 1, totalAmount: num }
-  }
   return null
 }
 

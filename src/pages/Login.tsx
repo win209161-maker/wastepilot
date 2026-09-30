@@ -18,8 +18,12 @@ export function Login() {
     setError(null)
 
     if (tab === 'signup') {
-      if (password.length < 6) {
-        setError('Le mot de passe doit contenir au moins 6 caractères')
+      if (password.length < 8) {
+        setError('Le mot de passe doit contenir au moins 8 caractères')
+        return
+      }
+      if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+        setError('Le mot de passe doit contenir au moins une majuscule et un chiffre')
         return
       }
       if (password !== confirmPassword) {
@@ -69,17 +73,11 @@ export function Login() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: 'var(--color-brand)' }}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14H6L5 6" />
-              <path d="M10 11v6M14 11v6" />
-              <path d="M9 6V4h6v2" />
-            </svg>
-          </div>
+          <img
+            src="/logo.jpg"
+            alt="WastePilot"
+            className="w-48 h-24 object-contain mx-auto mb-4"
+          />
           <h1 className="page-title mb-1">WastePilot</h1>
           <p className="text-sm text-gray-500">Gestion des abonnements collecte</p>
         </div>

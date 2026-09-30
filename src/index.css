@@ -19,6 +19,8 @@
     --color-sage: #E9EFED;
     --color-brand: #1B6C42;
     --color-brand-hover: #155A35;
+    height: 100%;
+    overflow-x: hidden;
   }
   body {
     background-color: var(--color-sage);
@@ -26,6 +28,13 @@
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    min-height: 100%;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+  #root {
+    min-height: 100%;
+    min-height: 100dvh;
   }
   h1, h2 {
     font-family: 'Playfair Display', Georgia, serif;

@@ -415,7 +415,7 @@ export function Dashboard() {
                 <Bar dataKey="outstanding" fill="#fca5a5" radius={[3, 3, 0, 0]} name="Restant" />
               </BarChart>
             </ResponsiveContainer>
-            <div className="flex items-center gap-5 mt-2 justify-center">
+            <div className="flex flex-wrap items-center gap-4 mt-2 justify-center">
               {[['#e2e8f0', 'Attendu'], ['#1B6C42', 'Encaissé'], ['#fca5a5', 'Restant']].map(([c, l]) => (
                 <div key={l} className="flex items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded-sm" style={{ background: c }} />

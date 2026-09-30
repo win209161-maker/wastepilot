@@ -52,14 +52,6 @@ const CSS = `
 .wp-btn-white:hover { transform:translateY(-2px); box-shadow:0 12px 32px rgba(0,0,0,.15) !important; }
 `
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
-const TrashIcon = ({ size = 24, color = 'white' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" />
-    <path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
-  </svg>
-)
-
 const features = [
   {
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={BRAND} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
@@ -143,9 +135,7 @@ export function LandingPage() {
       }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 12, background: BRAND, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'wp-pulse-ring 2.5s infinite' }}>
-              <TrashIcon size={20} />
-            </div>
+            <img src="/logo.jpg" alt="WastePilot" style={{ width: 56, height: 32, objectFit: 'contain' }} />
             <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-0.3px' }}>WastePilot</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -255,9 +245,7 @@ export function LandingPage() {
             {/* Sidebar */}
             <div style={{ width: 160, background: '#f0fdf4', padding: '12px 8px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', marginBottom: 8 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: BRAND, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <TrashIcon size={14} />
-                </div>
+                <img src="/logo.jpg" alt="WastePilot" style={{ width: 40, height: 22, objectFit: 'contain' }} />
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>WastePilot</span>
               </div>
               {['Tableau de bord','Clients','Facturation','Paiements','Rapports'].map((label, i) => (
@@ -427,9 +415,7 @@ export function LandingPage() {
       {/* ── Footer ── */}
       <footer style={{ padding: '36px 24px', background: '#0f172a', textAlign: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: BRAND, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <TrashIcon size={17} />
-          </div>
+          <img src="/logo.jpg" alt="WastePilot" style={{ width: 52, height: 28, objectFit: 'contain' }} />
           <span style={{ color: 'white', fontWeight: 800, fontSize: 16 }}>WastePilot</span>
         </div>
         <p style={{ color: '#64748b', fontSize: 13, marginBottom: 6 }}>Gestion professionnelle des collectes de déchets · Conakry, Guinée</p>

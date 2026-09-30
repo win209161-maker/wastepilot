@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Plus, Users, Building2, ChevronDown, Trash2, UserPlus, AlertTriangle } from 'lucide-react'
+import { Plus, Users, Building2, ChevronDown, Trash2, UserPlus, AlertTriangle, Phone, MapPin, FileText } from 'lucide-react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../context/OrgContext'
+import { getCompanyProfile, saveCompanyProfile, type CompanyProfile } from '../lib/companyProfile'
 import type { Sector } from '../types/database'
 
 interface OrgMemberRow {
@@ -29,6 +30,10 @@ export function Settings() {
   const [inviting, setInviting] = useState(false)
   const [inviteResult, setInviteResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
+  // Company profile
+  const [companyProfile, setCompanyProfile] = useState<Partial<CompanyProfile>>({})
+  const [profileSaved, setProfileSaved] = useState(false)
+
   // Danger zone
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
@@ -41,6 +46,7 @@ export function Settings() {
       .then(({ data }) => setSectors(data ?? []))
     supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null))
     setOrgName(org.name)
+    setCompanyProfile(getCompanyProfile(org.id))
     loadMembers()
   }, [org?.id])
 
@@ -204,6 +210,90 @@ export function Settings() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Company profile */}
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText className="w-4 h-4 text-gray-500" />
+            <h2 className="text-sm font-semibold text-gray-900">Profil de l'entreprise</h2>
+            <span className="text-xs text-gray-400">— affiché sur les factures et reçus</span>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="label">Nom affiché sur les documents</label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  className="input pl-9"
+                  value={companyProfile.name ?? org?.name ?? ''}
+                  onChange={e => setCompanyProfile(p => ({ ...p, name: e.target.value }))}
+                  placeholder="WastePilot Conakry"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Téléphone</label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
+                    className="input pl-9"
+                    value={companyProfile.phone ?? ''}
+                    onChange={e => setCompanyProfile(p => ({ ...p, phone: e.target.value }))}
+                    placeholder="+224 6X X XX XX XX"
+                    type="tel"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="label">Ville</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
+                    className="input pl-9"
+                    value={companyProfile.city ?? ''}
+                    onChange={e => setCompanyProfile(p => ({ ...p, city: e.target.value }))}
+                    placeholder="Conakry"
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="label">Adresse / Commune</label>
+              <input
+                className="input"
+                value={companyProfile.address ?? ''}
+                onChange={e => setCompanyProfile(p => ({ ...p, address: e.target.value }))}
+                placeholder="Quartier, commune..."
+              />
+            </div>
+            <div>
+              <label className="label">Pied de page facture <span className="text-gray-400 font-normal">(optionnel)</span></label>
+              <input
+                className="input"
+                value={companyProfile.invoice_footer ?? ''}
+                onChange={e => setCompanyProfile(p => ({ ...p, invoice_footer: e.target.value }))}
+                placeholder="RCCM: xxxxxxxx · NIF: xxxxxxxx"
+              />
+            </div>
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  if (org) {
+                    saveCompanyProfile(org.id, companyProfile)
+                    setProfileSaved(true)
+                    setTimeout(() => setProfileSaved(false), 3000)
+                  }
+                }}
+                disabled={org?.role === 'member'}
+              >
+                Enregistrer le profil
+              </button>
+              {profileSaved && <span className="text-xs text-green-700">✓ Profil enregistré</span>}
+            </div>
           </div>
         </div>
 

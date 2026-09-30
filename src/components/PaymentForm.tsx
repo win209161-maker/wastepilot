@@ -3,7 +3,7 @@ import { Download } from 'lucide-react'
 import { recordPayment } from '../hooks/usePayments'
 import { useOrg } from '../context/OrgContext'
 import { formatMoney, formatBillingPeriod } from '../lib/utils'
-import { generateReceipt, downloadPdf, shareOnWhatsApp, type ReceiptData } from '../lib/pdf'
+import { generateReceipt, downloadPdf, shareOnWhatsApp, ensureLogoLoaded, type ReceiptData } from '../lib/pdf'
 import type { BillingCharge } from '../types/database'
 
 interface Props {
@@ -87,17 +87,20 @@ export function PaymentForm({ customerId, customerName, outstandingCharges, onSu
       paymentMethod: done!.method,
       reference: done!.reference || null,
       periods: done!.coveredPeriods,
+      orgId: org?.id,
     }
   }
 
-  function handleDownloadReceipt() {
+  async function handleDownloadReceipt() {
     if (!done) return
+    await ensureLogoLoaded()
     const doc = generateReceipt(buildReceiptData())
     downloadPdf(doc, `Recu-WP-${done.date}-${customerName.replace(/ /g, '_')}.pdf`)
   }
 
   async function handleWhatsAppReceipt() {
     if (!done) return
+    await ensureLogoLoaded()
     const receiptNum = `WP-R-${done.paymentId.slice(-8).toUpperCase()}`
     const doc = generateReceipt(buildReceiptData())
     const filename = `Recu-WP-${done.date}-${customerName.replace(/ /g, '_')}.pdf`

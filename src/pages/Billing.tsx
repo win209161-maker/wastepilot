@@ -12,7 +12,7 @@ import { useBilling, type ChargeRow } from '../hooks/useBilling'
 import { formatMoney, formatBillingPeriod, currentBillingPeriod } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { useOrg } from '../context/OrgContext'
-import { generateInvoice, downloadPdf, shareOnWhatsApp, type InvoiceData } from '../lib/pdf'
+import { generateInvoice, downloadPdf, shareOnWhatsApp, ensureLogoLoaded, type InvoiceData } from '../lib/pdf'
 
 // ─── Add single charge form ────────────────────────────────────────────────────
 function AddChargeForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
@@ -196,7 +196,7 @@ function GenerateBillingModal({ period, onSuccess, onCancel }: {
       <div>
         <label className="label">Période à générer</label>
         <input
-          className="input font-mono w-40"
+          className="input font-mono w-full sm:w-40"
           value={targetPeriod}
           onChange={e => { setTargetPeriod(e.target.value); setPreview(null); setDone(0) }}
           pattern="\d{4}-\d{2}"
@@ -498,10 +498,12 @@ export function Billing() {
       amountPaid: c.amount_paid,
       balance: c.balance,
       status: c.status,
+      orgId: org?.id,
     }
   }
 
-  function handleDownloadInvoice(c: ChargeRow) {
+  async function handleDownloadInvoice(c: ChargeRow) {
+    await ensureLogoLoaded()
     const data = buildInvoiceData(c)
     const doc = generateInvoice(data)
     downloadPdf(doc, `Facture-WP-${c.billing_period}-${data.customerName.replace(/ /g, '_')}.pdf`)
@@ -509,6 +511,7 @@ export function Billing() {
   }
 
   async function handleWhatsAppInvoice(c: ChargeRow) {
+    await ensureLogoLoaded()
     const data = buildInvoiceData(c)
     if (!data.phone) return
     const invoiceNum = `WP-${c.billing_period.replace('-', '')}-${c.id.slice(-6).toUpperCase()}`
@@ -536,36 +539,36 @@ export function Billing() {
       <PageHeader
         title="Facturation"
         description="Gestion des charges mensuelles"
-        actions={
-          <div className="flex gap-2">
-            <button
-              className="btn-secondary relative"
-              onClick={() => setShowWhatsApp(true)}
-              title="Rappels WhatsApp"
-            >
-              <MessageCircle className="w-4 h-4 text-[#25D366]" />
-              Rappels
-              {unpaidCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {unpaidCount > 9 ? '9+' : unpaidCount}
-                </span>
-              )}
-            </button>
-            <button className="btn-secondary" onClick={checkOverdue} title="Marquer en retard les mois précédents">
-              <Clock className="w-4 h-4 text-orange-500" />
-              Retards
-            </button>
-            <button className="btn-secondary" onClick={() => setShowGenerate(true)}>
-              <Zap className="w-4 h-4 text-amber-500" />
-              Générer
-            </button>
-            <button className="btn-primary" onClick={() => setShowForm(true)}>
-              <Plus className="w-4 h-4" />
-              Nouvelle charge
-            </button>
-          </div>
-        }
       />
+
+      {/* Action buttons — horizontal scroll on mobile so all 4 are always reachable */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-4">
+        <button
+          className="btn-secondary relative flex-shrink-0"
+          onClick={() => setShowWhatsApp(true)}
+          title="Rappels WhatsApp"
+        >
+          <MessageCircle className="w-4 h-4 text-[#25D366]" />
+          Rappels
+          {unpaidCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              {unpaidCount > 9 ? '9+' : unpaidCount}
+            </span>
+          )}
+        </button>
+        <button className="btn-secondary flex-shrink-0" onClick={checkOverdue} title="Marquer en retard les mois précédents">
+          <Clock className="w-4 h-4 text-orange-500" />
+          Retards
+        </button>
+        <button className="btn-secondary flex-shrink-0" onClick={() => setShowGenerate(true)}>
+          <Zap className="w-4 h-4 text-amber-500" />
+          Générer
+        </button>
+        <button className="btn-primary flex-shrink-0" onClick={() => setShowForm(true)}>
+          <Plus className="w-4 h-4" />
+          Nouvelle charge
+        </button>
+      </div>
 
       {/* Period selector */}
       <div className="card p-4 mb-4">
@@ -588,10 +591,10 @@ export function Billing() {
             <option value="unpaid">Impayé</option>
             <option value="overdue">En retard</option>
           </select>
-          <div className="flex flex-wrap gap-4 ml-auto text-sm">
-            <div><span className="text-gray-500">Attendu:</span> <span className="font-semibold ml-1">{formatMoney(summary.expected)}</span></div>
-            <div><span className="text-gray-500">Encaissé:</span> <span className="font-semibold text-green-700 ml-1">{formatMoney(summary.collected)}</span></div>
-            <div><span className="text-gray-500">Solde:</span> <span className="font-semibold text-red-600 ml-1">{formatMoney(summary.outstanding)}</span></div>
+          <div className="flex flex-wrap gap-3 sm:gap-4 sm:ml-auto text-sm border-t border-gray-100 pt-3 sm:border-0 sm:pt-0">
+            <div className="flex items-center gap-1.5"><span className="text-gray-500">Attendu:</span> <span className="font-semibold">{formatMoney(summary.expected)}</span></div>
+            <div className="flex items-center gap-1.5"><span className="text-gray-500">Encaissé:</span> <span className="font-semibold text-green-700">{formatMoney(summary.collected)}</span></div>
+            <div className="flex items-center gap-1.5"><span className="text-gray-500">Solde:</span> <span className="font-semibold text-red-600">{formatMoney(summary.outstanding)}</span></div>
           </div>
         </div>
       </div>
@@ -648,29 +651,29 @@ export function Billing() {
                         {['unpaid', 'partial', 'overdue'].includes(c.status) && (
                           <>
                             <button
-                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-colors"
+                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full transition-colors min-h-[32px]"
                               style={{ background: 'var(--color-brand)', color: 'white' }}
                               onClick={e => { e.stopPropagation(); setPayCharge(c) }}
                               title="Enregistrer un paiement"
                             >
-                              <CreditCard className="w-3 h-3" />
+                              <CreditCard className="w-3.5 h-3.5" />
                               <span className="hidden sm:inline">Payer</span>
                             </button>
                             <button
-                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors min-h-[32px]"
                               onClick={e => { e.stopPropagation(); handleDownloadInvoice(c) }}
                               title="Télécharger la facture PDF"
                             >
-                              <FileText className="w-3 h-3" />
+                              <FileText className="w-3.5 h-3.5" />
                               <span className="hidden sm:inline">Facture</span>
                             </button>
                             {(c.customers as any)?.phone && (
                               <button
-                                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white transition-colors"
+                                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full border border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white transition-colors min-h-[32px]"
                                 onClick={e => { e.stopPropagation(); handleWhatsAppInvoice(c) }}
                                 title="Envoyer facture par WhatsApp"
                               >
-                                <MessageCircle className="w-3 h-3" />
+                                <MessageCircle className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </>

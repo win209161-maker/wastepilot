@@ -607,7 +607,7 @@ export function Import() {
       />
 
       {step === 'upload' && (
-        <div className="card p-8">
+        <div className="card p-4 sm:p-8">
           <div className="max-w-md mx-auto text-center">
             <div className="p-4 bg-green-50 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
               <FileSpreadsheet className="w-8 h-8 text-green-600" />
@@ -862,7 +862,7 @@ export function Import() {
       )}
 
       {step === 'done' && imported && (
-        <div className="card p-8 text-center max-w-md mx-auto">
+        <div className="card p-4 sm:p-8 text-center max-w-md mx-auto">
           <div className="p-4 bg-green-50 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <CheckCircle2 className="w-8 h-8 text-green-600" />
           </div>

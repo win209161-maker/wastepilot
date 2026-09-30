@@ -25,14 +25,7 @@ interface SidebarProps {
 
 const Logo = () => (
   <div className="flex items-center gap-2.5">
-    <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--color-brand)' }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="3 6 5 6 21 6" />
-        <path d="M19 6l-1 14H6L5 6" />
-        <path d="M10 11v6M14 11v6" />
-        <path d="M9 6V4h6v2" />
-      </svg>
-    </div>
+    <img src="/logo.jpg" alt="WastePilot" className="h-8 w-12 rounded-xl object-contain flex-shrink-0" />
     <div>
       <div className="text-sm font-bold text-gray-900 font-serif">WastePilot</div>
       <div className="text-xs text-gray-400">Gestion collecte</div>

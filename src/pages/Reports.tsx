@@ -179,10 +179,10 @@ export function Reports() {
       />
 
       <div className="flex items-center gap-4 mb-6">
-        <div>
+        <div className="w-full sm:w-auto">
           <label className="label">Période</label>
           <input
-            className="input font-mono"
+            className="input font-mono sm:w-44"
             type="month"
             value={period}
             onChange={e => setPeriod(e.target.value.replace('-', '-'))}
@@ -241,6 +241,7 @@ export function Reports() {
                 Recouvrement par secteur — {formatBillingPeriod(period)}
               </h2>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200">
@@ -279,6 +280,7 @@ export function Reports() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Unpaid customers */}

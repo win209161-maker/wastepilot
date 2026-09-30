@@ -11,7 +11,7 @@ import { CustomerForm } from '../components/CustomerForm'
 import { useCustomerBilling } from '../hooks/useBilling'
 import { useSectors } from '../hooks/useCustomers'
 import { formatMoney, formatDate, formatBillingPeriod } from '../lib/utils'
-import { generateReceipt, downloadPdf, shareOnWhatsApp, type ReceiptData } from '../lib/pdf'
+import { generateReceipt, downloadPdf, shareOnWhatsApp, ensureLogoLoaded, type ReceiptData } from '../lib/pdf'
 import type { Customer, Sector, Subscription } from '../types/database'
 
 const METHOD_LABEL: Record<string, string> = {
@@ -81,8 +81,9 @@ export function CustomerProfile() {
   const totalBalance = totalDue - totalPaid
   const activeSub = customer?.subscriptions.find(s => s.status === 'active')
 
-  function handleDownloadReceipt(p: any) {
+  async function handleDownloadReceipt(p: any) {
     if (!customer) return
+    await ensureLogoLoaded()
     const periods: string[] = (p.payment_allocations ?? [])
       .map((a: any) => a.billing_charges?.billing_period)
       .filter(Boolean)
@@ -96,6 +97,7 @@ export function CustomerProfile() {
       paymentMethod: p.payment_method,
       reference: p.reference ?? null,
       periods,
+      orgId: org?.id,
     }
     const doc = generateReceipt(data)
     downloadPdf(doc, `Recu-WP-${p.payment_date}-${customer.last_name}.pdf`)
@@ -103,6 +105,7 @@ export function CustomerProfile() {
 
   async function handleWhatsAppReceipt(p: any) {
     if (!customer) return
+    await ensureLogoLoaded()
     const periods: string[] = (p.payment_allocations ?? [])
       .map((a: any) => a.billing_charges?.billing_period)
       .filter(Boolean)
@@ -116,6 +119,7 @@ export function CustomerProfile() {
       paymentMethod: p.payment_method,
       reference: p.reference ?? null,
       periods,
+      orgId: org?.id,
     }
     const doc = generateReceipt(data)
     const filename = `Recu-WP-${p.payment_date}-${customer.last_name}.pdf`
@@ -154,9 +158,9 @@ export function CustomerProfile() {
 
       {/* Header */}
       <div className="card p-6 mb-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
               <h1 className="text-xl font-semibold text-gray-900">
                 {customer.last_name} {customer.first_name}
               </h1>
@@ -186,7 +190,7 @@ export function CustomerProfile() {
               )}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-shrink-0">
             <button className="btn-secondary" onClick={() => setShowEdit(true)}>
               <Pencil className="w-4 h-4" />
               Modifier

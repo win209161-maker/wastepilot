@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { OrgProvider, useOrg } from './context/OrgContext'
 import { Sidebar, MobileHeader } from './components/layout/Sidebar'
+import { OnboardingModal } from './components/OnboardingModal'
 import { Login } from './pages/Login'
 import { LandingPage } from './pages/LandingPage'
 import { OrgSetup } from './pages/OrgSetup'
@@ -17,18 +18,19 @@ import { Reports } from './pages/Reports'
 import { Import } from './pages/Import'
 import { Settings } from './pages/Settings'
 import { Privacy } from './pages/Privacy'
+import { isProfileComplete, hasSkippedOnboarding } from './lib/companyProfile'
 
 function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex min-h-screen" style={{ background: 'var(--color-sage)' }}>
+    <div className="flex" style={{ minHeight: '100dvh', background: 'var(--color-sage)' }}>
       <Sidebar mobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex-1 flex flex-col min-w-0">
         <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
 
-        <main className="flex-1 p-4 lg:p-6 max-w-full">
+        <main className="p-4 lg:p-6 max-w-full pb-8">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/customers" element={<Customers />} />
@@ -48,6 +50,13 @@ function AppShell() {
 
 function OrgGate() {
   const { org, loading } = useOrg()
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
+  useEffect(() => {
+    if (org && !isProfileComplete(org.id) && !hasSkippedOnboarding(org.id)) {
+      setShowOnboarding(true)
+    }
+  }, [org?.id])
 
   if (loading) {
     return (
@@ -59,7 +68,14 @@ function OrgGate() {
 
   if (!org) return <OrgSetup />
 
-  return <AppShell />
+  return (
+    <>
+      {showOnboarding && (
+        <OnboardingModal org={org} onComplete={() => setShowOnboarding(false)} />
+      )}
+      <AppShell />
+    </>
+  )
 }
 
 export default function App() {

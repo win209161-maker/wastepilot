@@ -1,10 +1,32 @@
 import jsPDF from 'jspdf'
 import { formatBillingPeriod } from './utils'
+import { getCompanyProfile } from './companyProfile'
 
 const BRAND = '#1B6C42'
 const BRAND_LIGHT = '#E9EFED'
 const GRAY = '#6b7280'
 const DARK = '#111827'
+
+// ── Logo preloader (cached per session) ──────────────────────────────────────
+let _logoDataUrl: string | null = null
+let _logoLoading: Promise<string | null> | null = null
+
+export async function ensureLogoLoaded(): Promise<void> {
+  if (_logoDataUrl !== null) return
+  if (_logoLoading) { await _logoLoading; return }
+  _logoLoading = fetch('/logo.jpg')
+    .then(r => r.blob())
+    .then(blob => new Promise<string>(res => {
+      const reader = new FileReader()
+      reader.onload = () => res(reader.result as string)
+      reader.readAsDataURL(blob)
+    }))
+    .catch(() => null)
+  _logoDataUrl = await _logoLoading
+  _logoLoading = null
+}
+
+function getLogoDataUrl(): string | null { return _logoDataUrl }
 
 function pdfMoney(amount: number): string {
   const s = String(Math.round(amount))
@@ -15,44 +37,54 @@ function pdfMoney(amount: number): string {
   return parts.join(' ') + ' FG'
 }
 
-function drawHeader(doc: jsPDF, docWidth: number) {
+function drawHeader(doc: jsPDF, docWidth: number, orgId?: string) {
+  const profile = orgId ? getCompanyProfile(orgId) : {}
+  const companyName = profile.name || 'WastePilot'
+  const companyCity = profile.city || 'Conakry'
+  const companyPhone = profile.phone || ''
+
   // Green header bar
   doc.setFillColor(BRAND)
   doc.rect(0, 0, docWidth, 28, 'F')
 
-  // WastePilot title
+  // Company name
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
   doc.setTextColor(255, 255, 255)
-  doc.text('WastePilot', 14, 12)
+  doc.text(companyName, 14, 12)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(200, 230, 215)
-  doc.text('Gestion des collectes de déchets · Conakry, Guinée', 14, 19)
+  const subtitle = companyPhone
+    ? `Gestion des collectes de déchets · ${companyCity} · Tél: ${companyPhone}`
+    : `Gestion des collectes de déchets · ${companyCity}, Guinée`
+  doc.text(subtitle, 14, 19)
 
-  // Trash can icon (simple drawn)
-  doc.setDrawColor(255, 255, 255)
-  doc.setLineWidth(0.5)
-  const ix = docWidth - 22
-  doc.roundedRect(ix - 4, 5, 10, 12, 1.5, 1.5, 'S')
-  doc.line(ix - 6, 7, ix + 8, 7)
-  doc.line(ix, 5, ix, 3)
-  doc.line(ix + 2, 5, ix + 2, 3)
-  doc.line(ix - 2, 9, ix - 2, 16)
-  doc.line(ix + 2, 9, ix + 2, 16)
+  // Logo image (preloaded via ensureLogoLoaded), falls back to nothing
+  const logo = getLogoDataUrl()
+  if (logo) {
+    const logoW = 28
+    const logoH = 16
+    doc.addImage(logo, 'JPEG', docWidth - 14 - logoW, 6, logoW, logoH, '', 'FAST')
+  }
 
   doc.setTextColor(DARK)
   doc.setDrawColor('#e5e7eb')
 }
 
-function drawFooter(doc: jsPDF, docWidth: number, pageHeight: number) {
+function drawFooter(doc: jsPDF, docWidth: number, pageHeight: number, orgId?: string) {
+  const profile = orgId ? getCompanyProfile(orgId) : {}
+  const companyName = profile.name || 'WastePilot'
+  const companyCity = profile.city || 'Conakry'
+  const footerExtra = profile.invoice_footer || 'Gestion professionnelle des collectes'
+
   doc.setFillColor(BRAND_LIGHT)
   doc.rect(0, pageHeight - 18, docWidth, 18, 'F')
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.5)
   doc.setTextColor(GRAY)
-  doc.text('WastePilot · Conakry, Guinée · Gestion professionnelle des collectes', docWidth / 2, pageHeight - 9, { align: 'center' })
+  doc.text(`${companyName} · ${companyCity}, Guinée · ${footerExtra}`, docWidth / 2, pageHeight - 9, { align: 'center' })
   doc.text(`Document généré le ${new Date().toLocaleDateString('fr-FR')}`, docWidth / 2, pageHeight - 4.5, { align: 'center' })
 }
 
@@ -84,6 +116,7 @@ export interface InvoiceData {
   amountPaid: number
   balance: number
   status: string
+  orgId?: string
 }
 
 export interface ReceiptData {
@@ -96,6 +129,7 @@ export interface ReceiptData {
   paymentMethod: string
   reference: string | null
   periods: string[]
+  orgId?: string
 }
 
 const METHOD_FR: Record<string, string> = {
@@ -125,7 +159,7 @@ export function generateInvoice(data: InvoiceData): jsPDF {
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
 
-  drawHeader(doc, W)
+  drawHeader(doc, W, data.orgId)
 
   // Invoice title
   doc.setFont('helvetica', 'bold')
@@ -257,7 +291,7 @@ export function generateInvoice(data: InvoiceData): jsPDF {
   doc.text('Espèces · Mobile Money · Virement bancaire', 20, y + 14)
   doc.text('Merci de régler ce montant pour maintenir votre service de collecte.', 20, y + 20)
 
-  drawFooter(doc, W, H)
+  drawFooter(doc, W, H, data.orgId)
 
   return doc
 }
@@ -267,7 +301,7 @@ export function generateReceipt(data: ReceiptData): jsPDF {
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
 
-  drawHeader(doc, W)
+  drawHeader(doc, W, data.orgId)
 
   // Title — same size and position as "FACTURE"
   doc.setFont('helvetica', 'bold')
@@ -408,7 +442,7 @@ export function generateReceipt(data: ReceiptData): jsPDF {
   doc.text('Ce document certifie la reception du montant indique.', 18, y + 19)
   doc.text('Conservez ce recu comme preuve de paiement.', 18, y + 24)
 
-  drawFooter(doc, W, H)
+  drawFooter(doc, W, H, data.orgId)
 
   return doc
 }

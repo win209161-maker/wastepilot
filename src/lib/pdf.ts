@@ -381,8 +381,8 @@ export function generateReceipt(data: ReceiptData): jsPDF {
   doc.setFillColor(BRAND_LIGHT)
   doc.roundedRect(14, y, W - 28, 26, 3, 3, 'F')
 
-  // Drawn checkmark circle (no unicode)
-  const ck = { x: 22, y: y + 13 }
+  // Green filled circle checkmark (circle center + title on the same row)
+  const ck = { x: 22, y: y + 10 }
   doc.setFillColor(BRAND)
   doc.circle(ck.x, ck.y, 4.5, 'F')
   doc.setDrawColor(255, 255, 255)
@@ -393,12 +393,12 @@ export function generateReceipt(data: ReceiptData): jsPDF {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
   doc.setTextColor(BRAND)
-  doc.text('PAIEMENT CONFIRME', 30, y + 9)
+  doc.text('PAIEMENT CONFIRME', 30, y + 12)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(GRAY)
-  doc.text('Ce document certifie la reception du montant indique.', 30, y + 16)
-  doc.text('Conservez ce recu comme preuve de paiement.', 30, y + 22)
+  doc.text('Ce document certifie la reception du montant indique.', 18, y + 19)
+  doc.text('Conservez ce recu comme preuve de paiement.', 18, y + 24)
 
   drawFooter(doc, W, H)
 

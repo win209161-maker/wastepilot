@@ -7,6 +7,7 @@ import { parseMultiMonthValue } from '../lib/utils'
 import * as XLSX from 'xlsx'
 
 interface ParsedCustomer {
+  row_type: 'base' | 'billing'
   order_num: number | null
   last_name: string
   first_name: string
@@ -27,14 +28,44 @@ interface ParsedCustomer {
   review_reason: string | null
 }
 
+// Handles YYYY-MM-DD, DD/MM/YYYY, D/M/YYYY, M/D/YY, DD/MM/YY
 function parseDate(val: any): string | null {
   if (val instanceof Date) return val.toISOString().split('T')[0]
-  if (typeof val === 'string' && val) return val
+  if (typeof val !== 'string' || !val) return null
+  // Already ISO
+  if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10)
+  const parts = val.split('/')
+  if (parts.length !== 3) return null
+  const [a, b, c] = parts.map(s => parseInt(s, 10))
+  if (isNaN(a) || isNaN(b) || isNaN(c)) return null
+  // 4-digit year: D/M/YYYY
+  if (parts[2].length === 4) {
+    const [d, m, y] = [a, b, c]
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31)
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  // 2-digit year
+  if (parts[2].length <= 2) {
+    const y = c + 2000
+    if (b > 12) return `${y}-${String(a).padStart(2, '0')}-${String(b).padStart(2, '0')}` // M/D/YY
+    if (a > 12) return `${y}-${String(b).padStart(2, '0')}-${String(a).padStart(2, '0')}` // D/M/YY
+    return `${y}-${String(b).padStart(2, '0')}-${String(a).padStart(2, '0')}` // ambiguous → D/M/YY
+  }
   return null
 }
 
-// Base initiale has different column order:
-// [N°, Nom, Prénoms, Phone, Quartier, DateDemande, SectorName, ?, ?, SubscriberID]
+// Detect sheet type from header content — reliable for both XLSX and CSV.
+// Base initiale: col 4 = "Quartier"
+// Billing sheets: col 4 = "Montant à payer"
+function detectSheetType(headerCells: any[]): 'base' | 'billing' {
+  const norm = (s: any) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  const col4 = norm(headerCells[4])
+  const col5 = norm(headerCells[5])
+  if (col4.includes('montant') || col4.includes('payer') || col5.includes('montant')) return 'billing'
+  return 'base'
+}
+
+// Base initiale column order: [N°, Nom, Prénoms, Phone, Quartier, DateDemande, SectorName, ?, ?, SubscriberID]
 function parseBaseRow(row: any[], sheet: string): ParsedCustomer | null {
   const [num, lastName, firstName, phone, quartier, dateDemande, sectorName] = row
   const subscriberId = row[9]
@@ -44,6 +75,7 @@ function parseBaseRow(row: any[], sheet: string): ParsedCustomer | null {
   if (String(lastName).toUpperCase() === 'NOM') return null
 
   return {
+    row_type: 'base',
     order_num: typeof num === 'number' ? num : null,
     last_name: String(lastName).toUpperCase().trim(),
     first_name: String(firstName).trim(),
@@ -65,8 +97,8 @@ function parseBaseRow(row: any[], sheet: string): ParsedCustomer | null {
   }
 }
 
-// Monthly/billing sheets: [N°, Nom, Prénoms, NumAbonne?, MontantPayer, MontantPaye, Contact, Quartier, DateDemande, Secteur, Concession, Ref]
-function parseRow(row: any[], sheet: string): ParsedCustomer | null {
+// Billing sheet column order: [N°, Nom, Prénoms, NumAbonne?, MontantPayer, MontantPaye, Contact, Quartier, DateDemande, Secteur, Concession, Ref]
+function parseBillingRow(row: any[], sheet: string): ParsedCustomer | null {
   const [num, lastName, firstName, numAbonne, montantPayer, montantPaye, contact, quartier, dateDemande, sect, concession, ref] = row
 
   if (!lastName || typeof lastName !== 'string') return null
@@ -106,6 +138,7 @@ function parseRow(row: any[], sheet: string): ParsedCustomer | null {
   }
 
   return {
+    row_type: 'billing',
     order_num: typeof num === 'number' ? num : null,
     last_name: String(lastName).toUpperCase().trim(),
     first_name: String(firstName).trim(),
@@ -127,10 +160,10 @@ function parseRow(row: any[], sheet: string): ParsedCustomer | null {
   }
 }
 
-function parseSheet(ws: XLSX.WorkSheet, name: string): ParsedCustomer[] {
+// isCsv: disables double-table detection (CSV is flat by definition)
+function parseSheet(ws: XLSX.WorkSheet, name: string, isCsv = false): ParsedCustomer[] {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, dateNF: 'YYYY-MM-DD' }) as any[][]
   const results: ParsedCustomer[] = []
-  const isBase = name.toLowerCase().replace(/\s+/g, '').includes('base') || name.toLowerCase().includes('initiale')
 
   let headerRow = -1
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
@@ -141,20 +174,23 @@ function parseSheet(ws: XLSX.WorkSheet, name: string): ParsedCustomer[] {
   }
   if (headerRow === -1) return []
 
-  const maxCols = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']).e.c + 1 : 12
+  // Detect by header content — works for CSV and XLSX regardless of tab name
+  const sheetType = detectSheetType(rows[headerRow] ?? [])
+  // Double-table detection: only for XLSX (CSV is always flat)
+  const maxCols = isCsv ? 0 : (ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']).e.c + 1 : 0)
 
   for (let i = headerRow + 1; i < rows.length; i++) {
     const row = rows[i]
     if (!row || row.every((c: any) => c == null || c === '')) continue
 
-    if (isBase) {
+    if (sheetType === 'base') {
       const parsed = parseBaseRow(row, name)
       if (parsed) results.push(parsed)
     } else {
-      const left = parseRow(row.slice(0, 12), name)
+      const left = parseBillingRow(row.slice(0, 12), name)
       if (left) results.push(left)
       if (maxCols >= 24) {
-        const right = parseRow(row.slice(13, 25), name + ' (droite)')
+        const right = parseBillingRow(row.slice(13, 25), name + ' (droite)')
         if (right) results.push(right)
       }
     }
@@ -164,10 +200,15 @@ function parseSheet(ws: XLSX.WorkSheet, name: string): ParsedCustomer[] {
 }
 
 function extractPeriod(sheet: string): string | null {
-  const s = sheet.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-  const yr = s.match(/20(\d{2})/)
-  if (!yr) return null
-  const year = `20${yr[1]}`
+  // Google Sheets CSV exports as "SpreadsheetName - SheetName" — use only SheetName part
+  const relevant = sheet.includes(' - ') ? sheet.split(' - ').slice(-1)[0] : sheet
+  const s = relevant.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  // Try 4-digit year first (e.g. "Janvier 2026"), then 2-digit (e.g. "Fév26", "juillet26")
+  const yr4 = s.match(/20(\d{2})/)
+  const yr2 = !yr4 ? s.match(/(\d{2})/) : null
+  const yrSuffix = yr4 ? yr4[1] : yr2 ? yr2[1] : null
+  if (!yrSuffix) return null
+  const year = `20${yrSuffix}`
   const months: Record<string, string> = {
     jan: '01', fev: '02', mar: '03', avr: '04', mai: '05', juin: '06',
     jul: '07', juil: '07', aou: '08', sep: '09', oct: '10', nov: '11', dec: '12',
@@ -196,13 +237,17 @@ export function Import() {
     const f = e.target.files?.[0]
     if (!f) return
     setFile(f)
+    const isCsv = f.name.toLowerCase().endsWith('.csv')
     const reader = new FileReader()
     reader.onload = (ev) => {
       const data = ev.target?.result
-      const wb = XLSX.read(data, { type: 'binary', cellDates: true })
+      // cellDates: false for CSV — XLSX.js date heuristics are unreliable for CSV strings
+      const wb = XLSX.read(data, { type: 'binary', cellDates: !isCsv })
       const allRows: ParsedCustomer[] = []
-      for (const name of wb.SheetNames) {
-        allRows.push(...parseSheet(wb.Sheets[name], name))
+      for (const xlsxSheetName of wb.SheetNames) {
+        // For CSV: use the filename (without .csv) as sheet name so extractPeriod works
+        const sheetName = isCsv ? f.name.replace(/\.csv$/i, '') : xlsxSheetName
+        allRows.push(...parseSheet(wb.Sheets[xlsxSheetName], sheetName, isCsv))
       }
       setParsed(allRows)
       setStep('preview')
@@ -236,11 +281,8 @@ export function Import() {
       return null
     }
 
-    // Base initiale rows = unique customer list (264 rows)
-    const baseRows = parsed.filter(r =>
-      !r.needs_review && (r.sheet.toLowerCase().replace(/\s+/g, '').includes('base') || r.sheet.toLowerCase().includes('initiale'))
-    )
-    // Fall back to all-sheets dedup if no Base initiale sheet found
+    // Base rows = unique customer list. Fall back to dedup if no base sheet.
+    const baseRows = parsed.filter(r => !r.needs_review && r.row_type === 'base')
     let uniqueCustomers: ParsedCustomer[]
     if (baseRows.length > 0) {
       uniqueCustomers = baseRows
@@ -254,8 +296,10 @@ export function Import() {
       uniqueCustomers = [...customerMap.values()]
     }
 
-    // Billing rows: monthly sheets only (have amount_due + extractable period)
-    const billingRows = parsed.filter(r => !r.needs_review && r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet))
+    // Billing rows: sheets with extractable period + valid amount
+    const billingRows = parsed.filter(r =>
+      !r.needs_review && r.row_type === 'billing' && r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet)
+    )
 
     // Load existing customers
     setProgress({ phase: 'Clients existants…', pct: 12 })
@@ -274,7 +318,7 @@ export function Import() {
     // Batch insert new customers
     for (let i = 0; i < toInsertCustomers.length; i += CHUNK) {
       const chunk = toInsertCustomers.slice(i, i + CHUNK)
-      setProgress({ phase: `Clients (${i}/${toInsertCustomers.length})…`, pct: 15 + Math.round(i / Math.max(toInsertCustomers.length, 1) * 25) })
+      setProgress({ phase: `Clients (${i + chunk.length}/${toInsertCustomers.length})…`, pct: 15 + Math.round((i + chunk.length) / Math.max(toInsertCustomers.length, 1) * 25) })
       const { error } = await supabase.from('customers').insert(chunk.map(r => ({
         org_id: org.id,
         last_name: r.last_name,
@@ -291,7 +335,7 @@ export function Import() {
       if (error) errs.push(`Clients batch ${i}: ${error.message}`)
     }
 
-    // Reload all customers → ID map
+    // Reload all customers → ID maps
     setProgress({ phase: 'IDs clients…', pct: 42 })
     const { data: allCustomers } = await supabase.from('customers').select('id, subscriber_id, last_name, first_name, phone').eq('org_id', org.id)
     const customerIdBySubId = new Map<string, string>()
@@ -300,7 +344,6 @@ export function Import() {
     for (const c of (allCustomers ?? []) as any[]) {
       if (c.subscriber_id) customerIdBySubId.set(c.subscriber_id, c.id)
       customerIdByNamePhone.set(clientKey(c), c.id)
-      // Name-only fallback (first match wins — fine for non-duplicate names)
       const nameKey = `${c.last_name}|${String(c.first_name).toUpperCase()}`
       if (!customerIdByNameOnly.has(nameKey)) customerIdByNameOnly.set(nameKey, c.id)
     }
@@ -344,7 +387,7 @@ export function Import() {
     }
 
     for (let i = 0; i < toInsertSubs.length; i += CHUNK) {
-      setProgress({ phase: `Abonnements (${i}/${toInsertSubs.length})…`, pct: 52 + Math.round(i / Math.max(toInsertSubs.length, 1) * 18) })
+      setProgress({ phase: `Abonnements (${i + Math.min(CHUNK, toInsertSubs.length - i)}/${toInsertSubs.length})…`, pct: 52 + Math.round(i / Math.max(toInsertSubs.length, 1) * 18) })
       const { error } = await supabase.from('subscriptions').insert(toInsertSubs.slice(i, i + CHUNK) as any)
       if (error) errs.push(`Abonnements batch ${i}: ${error.message}`)
     }
@@ -382,7 +425,7 @@ export function Import() {
     const charges = [...chargeMap.values()]
 
     for (let i = 0; i < charges.length; i += CHUNK) {
-      setProgress({ phase: `Charges (${i}/${charges.length})…`, pct: 76 + Math.round(i / Math.max(charges.length, 1) * 22) })
+      setProgress({ phase: `Charges (${i + Math.min(CHUNK, charges.length - i)}/${charges.length})…`, pct: 76 + Math.round(i / Math.max(charges.length, 1) * 22) })
       const { error } = await supabase.from('billing_charges').upsert(
         charges.slice(i, i + CHUNK),
         { onConflict: 'subscription_id,billing_period', ignoreDuplicates: false }
@@ -402,21 +445,18 @@ export function Import() {
 
   const uniqueCustomerCount = (() => {
     if (!parsed) return 0
-    const baseRows = okItems.filter(r =>
-      r.sheet.toLowerCase().replace(/\s+/g, '').includes('base') || r.sheet.toLowerCase().includes('initiale')
-    )
+    const baseRows = okItems.filter(r => r.row_type === 'base')
     if (baseRows.length > 0) return baseRows.length
-    // Fallback: dedup by subscriber_id or name+phone
     const seen = new Set<string>()
     for (const r of okItems) seen.add(r.subscriber_id ?? clientKey(r))
     return seen.size
   })()
 
-  const billingRowCount = okItems.filter(r => r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet)).length
+  const billingRowCount = okItems.filter(r => r.row_type === 'billing' && r.amount_due && r.amount_due > 0 && extractPeriod(r.sheet)).length
 
   return (
     <div>
-      <PageHeader title="Import Excel" description="Importez votre fichier abonnement existant" />
+      <PageHeader title="Import Excel / CSV" description="Importez votre fichier abonnement depuis Excel ou Google Sheets" />
 
       {step === 'upload' && (
         <div className="card p-8">
@@ -424,14 +464,17 @@ export function Import() {
             <div className="p-4 bg-green-50 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
               <FileSpreadsheet className="w-8 h-8 text-green-600" />
             </div>
-            <h2 className="text-base font-semibold text-gray-900 mb-2">Importer abonnement2026.xlsx</h2>
-            <p className="text-sm text-gray-500 mb-6">
-              Le fichier sera analysé automatiquement. Toutes les feuilles mensuelles seront lues,
-              les tableaux doubles détectés, et les valeurs multi-mois (2×20000) normalisées.
+            <h2 className="text-base font-semibold text-gray-900 mb-2">Importer les abonnés</h2>
+            <p className="text-sm text-gray-500 mb-2">
+              Formats acceptés : <strong>.xlsx</strong> (Excel, Google Sheets), <strong>.csv</strong> (Google Sheets → Télécharger).
+            </p>
+            <p className="text-sm text-gray-400 mb-6">
+              Le type de feuille est détecté automatiquement par l'en-tête — feuille maître ou facturation mensuelle.
+              Les tableaux doubles et les montants multi-mois (2×20 000) sont normalisés.
             </p>
             <label className="btn-primary cursor-pointer">
               <Upload className="w-4 h-4" />
-              Choisir le fichier Excel
+              Choisir le fichier
               <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
             </label>
           </div>
@@ -443,7 +486,7 @@ export function Import() {
           <div className="grid grid-cols-3 gap-4">
             <div className="card p-4 text-center">
               <div className="text-2xl font-bold text-green-700">{uniqueCustomerCount}</div>
-              <div className="text-xs text-gray-500">Clients uniques</div>
+              <div className="text-xs text-gray-500">Clients</div>
             </div>
             <div className="card p-4 text-center">
               <div className="text-2xl font-bold text-blue-600">{billingRowCount}</div>
@@ -497,7 +540,7 @@ export function Import() {
 
           <div className="card overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-900">Aperçu — {uniqueCustomerCount} clients uniques</h2>
+              <h2 className="text-sm font-semibold text-gray-900">Aperçu — {uniqueCustomerCount} clients</h2>
             </div>
             <div className="overflow-x-auto max-h-96 overflow-y-auto">
               <table className="w-full text-xs">
@@ -512,9 +555,11 @@ export function Import() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {(() => {
+                    const baseRows = okItems.filter(r => r.row_type === 'base')
+                    const source = baseRows.length > 0 ? baseRows : okItems
                     const seen = new Set<string>()
                     const unique: ParsedCustomer[] = []
-                    for (const r of okItems) {
+                    for (const r of source) {
                       const key = r.subscriber_id ?? clientKey(r)
                       if (!seen.has(key)) { seen.add(key); unique.push(r) }
                     }

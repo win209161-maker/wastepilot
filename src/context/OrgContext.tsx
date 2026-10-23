@@ -39,7 +39,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         .from('org_members')
         .select('role, organizations (id, name, slug)')
 
-      const list: Org[] = ((data ?? []) as any[]).flatMap(m => {
+      let list: Org[] = ((data ?? []) as any[]).flatMap(m => {
         if (!m.organizations) return []
         return [{
           id: m.organizations.id,
@@ -48,17 +48,37 @@ export function OrgProvider({ children }: { children: ReactNode }) {
           role: m.role as Org['role'],
         }]
       })
+
+      if (list.length === 0) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.app_metadata?.provider === 'google') {
+          const rawName = (user.user_metadata?.full_name as string)
+            || (user.user_metadata?.name as string)
+            || user.email?.split('@')[0]
+            || 'organisation'
+          const base = rawName.toLowerCase().normalize('NFD')
+            .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
+          const slug = base + '-' + Math.random().toString(36).slice(2, 6)
+          await supabase.rpc('create_org', { p_name: rawName, p_slug: slug })
+          const { data: d2 } = await supabase
+            .from('org_members')
+            .select('role, organizations (id, name, slug)')
+          list = ((d2 ?? []) as any[]).flatMap(m => {
+            if (!m.organizations) return []
+            return [{ id: m.organizations.id, name: m.organizations.name, slug: m.organizations.slug, role: m.role as Org['role'] }]
+          })
+        }
+      }
+
       setOrgs(list)
 
       if (list.length > 0) {
         const stored = currentOrgId && list.find(o => o.id === currentOrgId)
         if (!stored) {
-          // Prefer an org where user was invited (non-owner) over one they created
           const preferred = list.find(o => o.role !== 'owner') ?? list[0]
           setCurrentOrgId(preferred.id)
           localStorage.setItem('wp_org_id', preferred.id)
         } else if (stored.role === 'owner' && list.some(o => o.role !== 'owner')) {
-          // User created an empty org then was added to another — switch to the invited org
           const invited = list.find(o => o.role !== 'owner')!
           setCurrentOrgId(invited.id)
           localStorage.setItem('wp_org_id', invited.id)

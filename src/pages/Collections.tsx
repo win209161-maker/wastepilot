@@ -319,7 +319,7 @@ function MissedRolloverModal({ onClose, onSuccess }: { onClose: () => void; onSu
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type ScheduleRow = CollectionSchedule & {
-  customers: (Pick<Customer, 'first_name' | 'last_name' | 'concession' | 'reference'> & {
+  wp_customers: (Pick<Customer, 'first_name' | 'last_name' | 'concession' | 'reference'> & {
     sectors: Pick<Sector, 'code'> | null
   }) | null
 }
@@ -343,7 +343,7 @@ export function Collections() {
     setLoading(true)
     let query = supabase
       .from('collection_schedules')
-      .select(`*, customers (first_name, last_name, concession, reference, sectors (code))`)
+      .select(`*, wp_customers (first_name, last_name, concession, reference, sectors (code))`)
       .eq('org_id', org.id)
       .eq('scheduled_date', dateFilter)
       .order('created_at')

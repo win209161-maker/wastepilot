@@ -398,7 +398,7 @@ export function Import() {
 
     setProgress({ phase: 'Clients existants…', pct: 12 })
     const { data: existingCustomers } = await supabase
-      .from('customers')
+      .from('wp_customers')
       .select('id, subscriber_id, last_name, first_name, phone')
       .eq('org_id', org.id)
     const existingBySubId = new Map<string, string>()
@@ -420,7 +420,7 @@ export function Import() {
         phase: `Clients (${i + chunk.length}/${toInsertCustomers.length})…`,
         pct: 15 + Math.round(((i + chunk.length) / Math.max(toInsertCustomers.length, 1)) * 25),
       })
-      const { error } = await supabase.from('customers').insert(
+      const { error } = await supabase.from('wp_customers').insert(
         chunk.map(r => ({
           org_id: org.id,
           last_name: r.last_name,
@@ -440,7 +440,7 @@ export function Import() {
 
     setProgress({ phase: 'IDs clients…', pct: 42 })
     const { data: allCustomers } = await supabase
-      .from('customers')
+      .from('wp_customers')
       .select('id, subscriber_id, last_name, first_name, phone')
       .eq('org_id', org.id)
     const customerIdBySubId = new Map<string, string>()

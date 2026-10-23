@@ -4,7 +4,7 @@ import { useOrg } from '../context/OrgContext'
 import type { Payment, Customer } from '../types/database'
 
 export type PaymentRow = Payment & {
-  customers: Pick<Customer, 'first_name' | 'last_name' | 'subscriber_id'> | null
+  wp_customers: Pick<Customer, 'first_name' | 'last_name' | 'subscriber_id'> | null
 }
 
 export function usePayments(page = 0, pageSize = 20) {
@@ -20,7 +20,7 @@ export function usePayments(page = 0, pageSize = 20) {
 
     supabase
       .from('payments')
-      .select(`*, customers (first_name, last_name, subscriber_id)`, { count: 'exact' })
+      .select(`*, wp_customers (first_name, last_name, subscriber_id)`, { count: 'exact' })
       .eq('org_id', org.id)
       .order('payment_date', { ascending: false })
       .range(from, to)

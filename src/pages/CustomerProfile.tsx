@@ -55,7 +55,7 @@ export function CustomerProfile() {
 
   function reloadCustomer() {
     if (!id || !org) return
-    supabase.from('customers').select('*, sectors (*), subscriptions (*)')
+    supabase.from('wp_customers').select('*, sectors (*), subscriptions (*)')
       .eq('org_id', org.id)
       .eq('id', id).single()
       .then(({ data }) => setCustomer(data as unknown as FullCustomer))
@@ -64,7 +64,7 @@ export function CustomerProfile() {
   useEffect(() => {
     if (!id || !org) return
     supabase
-      .from('customers')
+      .from('wp_customers')
       .select('*, sectors (*), subscriptions (*)')
       .eq('org_id', org.id)
       .eq('id', id)

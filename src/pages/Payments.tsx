@@ -87,7 +87,7 @@ function NewPaymentModal({ onSuccess, onClose }: { onSuccess: () => void; onClos
     debounce.current = setTimeout(async () => {
       setSearching(true)
       const { data } = await supabase
-        .from('customers')
+        .from('wp_customers')
         .select('id, first_name, last_name, subscriber_id, sectors (code)')
         .eq('org_id', org!.id)
         .or(`last_name.ilike.%${query}%,first_name.ilike.%${query}%,subscriber_id.ilike.%${query}%`)
@@ -220,10 +220,10 @@ export function Payments() {
                   >
                     <td className="table-cell text-gray-600">{formatDate(p.payment_date)}</td>
                     <td className="table-cell font-medium text-gray-900">
-                      {p.customers ? `${p.customers.last_name} ${p.customers.first_name}` : '—'}
+                      {p.wp_customers ? `${p.wp_customers.last_name} ${p.wp_customers.first_name}` : '—'}
                     </td>
                     <td className="table-cell hidden md:table-cell font-mono text-xs text-gray-400">
-                      {p.customers?.subscriber_id ?? '—'}
+                      {p.wp_customers?.subscriber_id ?? '—'}
                     </td>
                     <td className="table-cell text-right font-semibold text-green-700">
                       {formatMoney(p.amount)}

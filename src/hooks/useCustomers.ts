@@ -30,7 +30,7 @@ export function useCustomers(filters: Filters) {
     setError(null)
     try {
       let query = supabase
-        .from('customers')
+        .from('wp_customers')
         .select(`*, sectors (name, code)`)
         .eq('org_id', org.id)
         .order('last_name, first_name')

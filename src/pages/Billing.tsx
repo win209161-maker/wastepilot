@@ -28,7 +28,7 @@ function AddChargeForm({ onSuccess, onCancel }: { onSuccess: () => void; onCance
   const [customers, setCustomers] = useState<{ id: string; last_name: string; first_name: string; subscriptions: { id: string; monthly_price: number }[] }[]>([])
 
   useEffect(() => {
-    supabase.from('customers').select('id, last_name, first_name, subscriptions (id, monthly_price)')
+    supabase.from('wp_customers').select('id, last_name, first_name, subscriptions (id, monthly_price)')
       .eq('org_id', org!.id).eq('status', 'active').order('last_name')
       .then(({ data }) => setCustomers((data ?? []) as any))
   }, [])
@@ -129,10 +129,10 @@ function GenerateBillingModal({ period, onSuccess, onCancel }: {
     try {
       const [{ data: subs }, { data: existing }] = await Promise.all([
         supabase.from('subscriptions')
-          .select('id, customer_id, monthly_price, customers!inner(first_name, last_name, status)')
+          .select('id, customer_id, monthly_price, wp_customers!inner(first_name, last_name, status)')
           .eq('org_id', org!.id)
           .eq('status', 'active')
-          .eq('customers.status', 'active'),
+          .eq('wp_customers.status', 'active'),
         supabase.from('billing_charges')
           .select('customer_id')
           .eq('org_id', org!.id)
@@ -145,7 +145,7 @@ function GenerateBillingModal({ period, onSuccess, onCancel }: {
       const noSub: string[] = []
 
       for (const s of (subs ?? []) as any[]) {
-        const name = `${s.customers?.last_name ?? ''} ${s.customers?.first_name ?? ''}`.trim()
+        const name = `${s.wp_customers?.last_name ?? ''} ${s.wp_customers?.first_name ?? ''}`.trim()
         if (existingIds.has(s.customer_id)) {
           alreadyExist.push(name)
         } else {
@@ -298,8 +298,8 @@ function WhatsAppModal({ period, onClose }: { period: string; onClose: () => voi
       .order('status')
       .then(({ data }) => {
         const r: UnpaidRow[] = ((data ?? []) as any[]).map(c => ({
-          name: `${c.customers?.last_name ?? ''} ${c.customers?.first_name ?? ''}`.trim(),
-          phone: c.customers?.phone ?? null,
+          name: `${c.wp_customers?.last_name ?? ''} ${c.wp_customers?.first_name ?? ''}`.trim(),
+          phone: c.wp_customers?.phone ?? null,
           balance: c.balance ?? (c.amount_due - c.amount_paid),
           status: c.status,
         }))
@@ -487,10 +487,10 @@ export function Billing() {
   function buildInvoiceData(c: ChargeRow): InvoiceData {
     return {
       chargeId: c.id,
-      customerName: `${c.customers?.last_name ?? ''} ${c.customers?.first_name ?? ''}`.trim(),
-      subscriberId: (c.customers as any)?.subscriber_id ?? null,
-      sectorName: (c.customers as any)?.sectors?.code ?? null,
-      phone: (c.customers as any)?.phone ?? null,
+      customerName: `${c.wp_customers?.last_name ?? ''} ${c.wp_customers?.first_name ?? ''}`.trim(),
+      subscriberId: (c.wp_customers as any)?.subscriber_id ?? null,
+      sectorName: (c.wp_customers as any)?.sectors?.code ?? null,
+      phone: (c.wp_customers as any)?.phone ?? null,
       billingPeriod: c.billing_period,
       monthlyPrice: c.monthly_price,
       monthsBilled: c.months_billed,
@@ -628,14 +628,14 @@ export function Billing() {
                   >
                     <td className="table-cell">
                       <div className="font-medium text-gray-900">
-                        {c.customers?.last_name} {c.customers?.first_name}
+                        {c.wp_customers?.last_name} {c.wp_customers?.first_name}
                       </div>
                       {c.months_billed > 1 && (
                         <div className="text-xs text-gray-400 mt-0.5">{c.months_billed} mois × {formatMoney(c.monthly_price)}</div>
                       )}
                     </td>
                     <td className="table-cell hidden md:table-cell text-gray-500">
-                      {(c.customers as any)?.sectors?.code ?? '—'}
+                      {(c.wp_customers as any)?.sectors?.code ?? '—'}
                     </td>
                     <td className="table-cell text-right font-medium">{formatMoney(c.amount_due)}</td>
                     <td className="table-cell text-right hidden sm:table-cell text-green-700">{formatMoney(c.amount_paid)}</td>
@@ -667,7 +667,7 @@ export function Billing() {
                               <FileText className="w-3.5 h-3.5" />
                               <span className="hidden sm:inline">Facture</span>
                             </button>
-                            {(c.customers as any)?.phone && (
+                            {(c.wp_customers as any)?.phone && (
                               <button
                                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full border border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white transition-colors min-h-[32px]"
                                 onClick={e => { e.stopPropagation(); handleWhatsAppInvoice(c) }}
@@ -708,13 +708,13 @@ export function Billing() {
       {/* Amélioration 3: inline payment modal */}
       <Modal
         open={!!payCharge}
-        title={`Paiement — ${payCharge?.customers?.last_name ?? ''} ${payCharge?.customers?.first_name ?? ''}`}
+        title={`Paiement — ${payCharge?.wp_customers?.last_name ?? ''} ${payCharge?.wp_customers?.first_name ?? ''}`}
         onClose={() => setPayCharge(null)}
       >
         {payCharge && (
           <PaymentForm
             customerId={payCharge.customer_id}
-            customerName={`${payCharge.customers?.last_name ?? ''} ${payCharge.customers?.first_name ?? ''}`}
+            customerName={`${payCharge.wp_customers?.last_name ?? ''} ${payCharge.wp_customers?.first_name ?? ''}`}
             outstandingCharges={[payCharge as any]}
             onSuccess={() => { setPayCharge(null); refresh() }}
             onCancel={() => setPayCharge(null)}
@@ -727,9 +727,9 @@ export function Billing() {
         <Modal open={!!invoiceCharge} title="📄 Facture téléchargée" onClose={() => setInvoiceCharge(null)} size="sm">
           <div className="p-6 space-y-4">
             <p className="text-sm text-gray-600">
-              La facture de <strong>{invoiceCharge.customers?.last_name} {invoiceCharge.customers?.first_name}</strong> a été téléchargée.
+              La facture de <strong>{invoiceCharge.wp_customers?.last_name} {invoiceCharge.wp_customers?.first_name}</strong> a été téléchargée.
             </p>
-            {(invoiceCharge.customers as any)?.phone ? (
+            {(invoiceCharge.wp_customers as any)?.phone ? (
               <button
                 onClick={() => { handleWhatsAppInvoice(invoiceCharge); setInvoiceCharge(null) }}
                 className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-semibold text-sm text-white transition-colors hover:opacity-90"

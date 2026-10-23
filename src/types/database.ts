@@ -38,7 +38,7 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['sectors']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['sectors']['Insert']>
       }
-      customers: {
+      wp_customers: {
         Row: {
           id: string
           org_id: string
@@ -59,8 +59,8 @@ export interface Database {
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['customers']['Row'], 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Database['public']['Tables']['customers']['Insert']>
+        Insert: Omit<Database['public']['Tables']['wp_customers']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['wp_customers']['Insert']>
       }
       subscriptions: {
         Row: {
@@ -169,7 +169,7 @@ export interface Database {
 export type Organization = Database['public']['Tables']['organizations']['Row']
 export type OrgMember = Database['public']['Tables']['org_members']['Row']
 export type Sector = Database['public']['Tables']['sectors']['Row']
-export type Customer = Database['public']['Tables']['customers']['Row']
+export type Customer = Database['public']['Tables']['wp_customers']['Row']
 export type Subscription = Database['public']['Tables']['subscriptions']['Row']
 export type BillingCharge = Database['public']['Tables']['billing_charges']['Row']
 export type Payment = Database['public']['Tables']['payments']['Row']

@@ -58,11 +58,11 @@ export function CustomerForm({ sectors, onSuccess, onCancel, defaultValues = {},
       }
 
       if (editMode) {
-        const { error: err } = await supabase.from('customers').update(payload).eq('id', customerId)
+        const { error: err } = await supabase.from('wp_customers').update(payload).eq('id', customerId)
         if (err) throw err
       } else {
         const { data: customer, error: custErr } = await supabase
-          .from('customers').insert({ ...payload, org_id: org!.id }).select().single()
+          .from('wp_customers').insert({ ...payload, org_id: org!.id }).select().single()
         if (custErr) throw custErr
 
         const price = parseInt(form.monthly_price)

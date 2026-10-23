@@ -59,11 +59,11 @@ export function Reports() {
     setLoading(true)
     Promise.all([
       supabase.from('billing_charges')
-        .select('customer_id, amount_due, amount_paid, customers (sector_id, sectors (name, code))')
+        .select('customer_id, amount_due, amount_paid, wp_customers (sector_id, sectors (name, code))')
         .eq('org_id', org.id)
         .eq('billing_period', period),
       supabase.from('billing_charges')
-        .select('customer_id, billing_period, amount_due, amount_paid, status, customers (first_name, last_name, subscriber_id, sector_id, sectors (code))')
+        .select('customer_id, billing_period, amount_due, amount_paid, status, wp_customers (first_name, last_name, subscriber_id, sector_id, sectors (code))')
         .eq('org_id', org.id)
         .in('status', ['unpaid', 'partial', 'overdue']),
       supabase.from('payments')
@@ -100,7 +100,7 @@ export function Reports() {
       // Sector rollup
       const sectorMap = new Map<string, { total: number; expected: number; collected: number }>()
       for (const c of charges) {
-        const customer = c.customers as any
+        const customer = c.wp_customers as any
         const sectorName = customer?.sectors?.name ?? 'Non défini'
         const prev = sectorMap.get(sectorName) ?? { total: 0, expected: 0, collected: 0 }
         sectorMap.set(sectorName, {
@@ -124,7 +124,7 @@ export function Reports() {
       // Unpaid customers
       const customerMap = new Map<string, CustomerReport>()
       for (const c of unpaid) {
-        const customer = c.customers as any
+        const customer = c.wp_customers as any
         const id = c.customer_id
         const existing = customerMap.get(id)
         if (existing) {

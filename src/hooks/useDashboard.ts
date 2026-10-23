@@ -84,7 +84,7 @@ export function useDashboard() {
 
         const [customersRes, chargesCurrentRes, chargesHistoryRes, collectionsRes, paymentsWeekRes, sectorsRes] =
           await Promise.all([
-            supabase.from('customers').select('id, first_name, last_name, status, sector_id, subscriber_id, phone').eq('org_id', org!.id).range(0, 4999),
+            supabase.from('wp_customers').select('id, first_name, last_name, status, sector_id, subscriber_id, phone').eq('org_id', org!.id).range(0, 4999),
             supabase.from('billing_charges').select('customer_id, amount_due, amount_paid, balance, status').eq('org_id', org!.id).eq('billing_period', period),
             supabase.from('billing_charges').select('billing_period, amount_due, amount_paid').eq('org_id', org!.id).gte('billing_period', getPastPeriod(6)).order('billing_period'),
             supabase.from('collection_schedules').select('status').eq('org_id', org!.id).eq('scheduled_date', todayStr),

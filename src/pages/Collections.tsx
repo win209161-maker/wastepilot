@@ -31,7 +31,7 @@ function GenerateSchedulesModal({ onSuccess, onClose }: { onSuccess: () => void;
   async function loadPreview() {
     if (!org) return
     setLoading(true)
-    let q = supabase.from('customers')
+    let q = supabase.from('wp_customers')
       .select('id, first_name, last_name, subscriptions!inner(id, status)')
       .eq('org_id', org.id)
       .eq('status', 'active')
@@ -159,7 +159,7 @@ function MissedRolloverModal({ onClose, onSuccess }: { onClose: () => void; onSu
     if (!org) return
     supabase
       .from('collection_schedules')
-      .select(`id, customer_id, subscription_id, scheduled_date, customers (first_name, last_name, sectors (code))`)
+      .select(`id, customer_id, subscription_id, scheduled_date, wp_customers (first_name, last_name, sectors (code))`)
       .eq('org_id', org.id)
       .eq('status', 'missed')
       .lte('scheduled_date', today)
@@ -170,8 +170,8 @@ function MissedRolloverModal({ onClose, onSuccess }: { onClose: () => void; onSu
           customer_id: s.customer_id,
           subscription_id: s.subscription_id,
           scheduled_date: s.scheduled_date,
-          customerName: `${s.customers?.last_name ?? ''} ${s.customers?.first_name ?? ''}`.trim(),
-          sectorCode: s.customers?.sectors?.code ?? null,
+          customerName: `${s.wp_customers?.last_name ?? ''} ${s.wp_customers?.first_name ?? ''}`.trim(),
+          sectorCode: s.wp_customers?.sectors?.code ?? null,
         }))
         setMissed(rows)
         setLoading(false)
@@ -505,13 +505,13 @@ export function Collections() {
                 {schedules.map(s => (
                   <tr key={s.id} className={s.status === 'missed' ? 'bg-red-50/40' : ''}>
                     <td className="table-cell font-medium text-gray-900">
-                      {s.customers?.last_name} {s.customers?.first_name}
+                      {s.wp_customers?.last_name} {s.wp_customers?.first_name}
                     </td>
                     <td className="table-cell hidden md:table-cell text-gray-500">
-                      {s.customers?.sectors?.code ?? '—'}
+                      {s.wp_customers?.sectors?.code ?? '—'}
                     </td>
                     <td className="table-cell hidden lg:table-cell text-gray-500 text-xs">
-                      {[s.customers?.concession, s.customers?.reference].filter(Boolean).join(' · ') || '—'}
+                      {[s.wp_customers?.concession, s.wp_customers?.reference].filter(Boolean).join(' · ') || '—'}
                     </td>
                     <td className="table-cell hidden sm:table-cell text-gray-500">
                       {s.assigned_worker ?? '—'}

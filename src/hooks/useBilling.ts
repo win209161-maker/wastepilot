@@ -4,7 +4,7 @@ import { useOrg } from '../context/OrgContext'
 import type { BillingCharge, Customer, Sector } from '../types/database'
 
 export type ChargeRow = BillingCharge & {
-  customers: (Pick<Customer, 'first_name' | 'last_name' | 'subscriber_id' | 'sector_id'> & {
+  wp_customers: (Pick<Customer, 'first_name' | 'last_name' | 'subscriber_id' | 'sector_id'> & {
     sectors: Pick<Sector, 'code'> | null
   }) | null
 }
@@ -21,7 +21,7 @@ export function useBilling(period: string, statusFilter: string) {
     try {
       let query = supabase
         .from('billing_charges')
-        .select(`*, customers (first_name, last_name, subscriber_id, sector_id, sectors (code))`)
+        .select(`*, wp_customers (first_name, last_name, subscriber_id, sector_id, sectors (code))`)
         .eq('org_id', org.id)
         .eq('billing_period', period)
         .order('created_at', { ascending: false })

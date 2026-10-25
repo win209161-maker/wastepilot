@@ -2,9 +2,12 @@ name: Supabase Keep-Alive
 
 on:
   schedule:
-    # Every 3 days at 09:00 UTC (Mon, Thu, Sun pattern)
+    # Every 3 days at 09:00 UTC
     - cron: '0 9 */3 * *'
-  workflow_dispatch: # Allow manual trigger from GitHub UI
+  push:
+    branches: [main]
+    paths: ['.github/workflows/keepalive.yml']
+  workflow_dispatch:
 
 jobs:
   ping:
